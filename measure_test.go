@@ -62,16 +62,17 @@ func TestMeasureMultiSpanRecorded(t *testing.T) {
 
 func TestMeasureConsumesReader(t *testing.T) {
 	h := th{t}
+	const want = "hello"
 	tbl := NewTable()
 	r := h.row(tbl.AddRow())
-	c := h.cell(r.AddCell(WithReader(strings.NewReader("hello"))))
+	c := h.cell(r.AddCell(WithReader(strings.NewReader(want))))
 
 	Measure(tbl)
 	if !c.resolved {
 		t.Error("cell should be marked resolved after Measure")
 	}
-	if c.Content() != "hello" {
-		t.Errorf("Content = %q, want %q", c.Content(), "hello")
+	if c.Content() != want {
+		t.Errorf("Content = %q, want %q", c.Content(), want)
 	}
 	if !c.hasContent {
 		t.Error("hasContent should be true after reader consumption")
