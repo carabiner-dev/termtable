@@ -20,58 +20,39 @@ func TestEmptyIDNotRegistered(t *testing.T) {
 }
 
 func TestDuplicateIDRejected(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	r, _ := tbl.AddRow()
-	if _, err := r.AddCell(WithCellID("dup"), WithContent("a")); err != nil {
-		t.Fatalf("first add: %v", err)
-	}
+	r := h.row(tbl.AddRow())
+	h.cell(r.AddCell(WithCellID("dup"), WithContent("a")))
+
 	_, err := r.AddCell(WithCellID("dup"), WithContent("b"))
 	if !errors.Is(err, ErrDuplicateID) {
 		t.Fatalf("second add err = %v, want ErrDuplicateID", err)
 	}
-	// Row should still have exactly one cell; the failing add must not
-	// leak grid state.
 	if got := len(r.Cells()); got != 1 {
 		t.Errorf("cells after conflict = %d, want 1", got)
 	}
 }
 
 func TestGetElementByIDTypes(t *testing.T) {
+	h := th{t}
 	tbl := NewTable(WithTableID("tbl"))
 
-	h, err := tbl.AddHeader(WithRowID("h"))
-	if err != nil {
-		t.Fatalf("AddHeader: %v", err)
-	}
-	hc, err := h.AddCell(WithCellID("hc"), WithContent("head"))
-	if err != nil {
-		t.Fatalf("header cell: %v", err)
-	}
+	hd := h.header(tbl.AddHeader(WithRowID("h")))
+	hc := h.cell(hd.AddCell(WithCellID("hc"), WithContent("head")))
 
-	r, err := tbl.AddRow(WithRowID("r"))
-	if err != nil {
-		t.Fatalf("AddRow: %v", err)
-	}
-	rc, err := r.AddCell(WithCellID("rc"), WithContent("body"))
-	if err != nil {
-		t.Fatalf("row cell: %v", err)
-	}
+	r := h.row(tbl.AddRow(WithRowID("r")))
+	rc := h.cell(r.AddCell(WithCellID("rc"), WithContent("body")))
 
-	f, err := tbl.AddFooter(WithRowID("f"))
-	if err != nil {
-		t.Fatalf("AddFooter: %v", err)
-	}
-	fc, err := f.AddCell(WithCellID("fc"), WithContent("foot"))
-	if err != nil {
-		t.Fatalf("footer cell: %v", err)
-	}
+	f := h.footer(tbl.AddFooter(WithRowID("f")))
+	fc := h.cell(f.AddCell(WithCellID("fc"), WithContent("foot")))
 
 	cases := []struct {
 		id   string
 		want Element
 	}{
 		{"tbl", tbl},
-		{"h", h},
+		{"h", hd},
 		{"hc", hc},
 		{"r", r},
 		{"rc", rc},
@@ -90,9 +71,10 @@ func TestGetElementByIDTypes(t *testing.T) {
 }
 
 func TestGetElementByIDTypeSwitch(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	r, _ := tbl.AddRow(WithRowID("r1"))
-	c, _ := r.AddCell(WithCellID("c1"), WithContent("x"))
+	r := h.row(tbl.AddRow(WithRowID("r1")))
+	c := h.cell(r.AddCell(WithCellID("c1"), WithContent("x")))
 
 	switch e := tbl.GetElementByID("r1").(type) {
 	case *Row:

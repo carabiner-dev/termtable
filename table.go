@@ -60,9 +60,9 @@ func NewTable(opts ...TableOption) *Table {
 		o(t)
 	}
 	if t.id != "" {
-		// Register the table's own ID so GetElementByID can return it.
-		// A conflict with itself is benign; ignore the error.
-		_ = t.registry.register(t.id, t)
+		// Safe direct insert: the registry is empty at construction so
+		// there is no possible conflict to report.
+		t.registry.m[t.id] = t
 	}
 	return t
 }
@@ -132,23 +132,9 @@ func (t *Table) Warnings() []Warning {
 // AddHeader appends a new header row and returns it.
 func (t *Table) AddHeader(opts ...RowOption) (*Header, error) {
 	h := &Header{}
-	h.rowBody.table = t
-	h.rowBody.section = sectionHeader
-	h.rowBody.sectionRow = len(t.headers)
-
-	for _, o := range opts {
-		o(&h.rowBody)
-	}
-	t.headerOcc.ensure(h.rowBody.sectionRow+1, 0)
-	if err := t.registry.register(h.id, h); err != nil {
-		return nil, err
-	}
-	t.headers = append(t.headers, h)
-
-	if err := t.flushPendingCells(&h.rowBody); err != nil {
-		// Roll back: remove header from slice and unregister.
-		t.headers = t.headers[:len(t.headers)-1]
-		t.registry.unregister(h.id)
+	commit := func() { t.headers = append(t.headers, h) }
+	rollback := func() { t.headers = t.headers[:len(t.headers)-1] }
+	if err := t.addSectionRow(&h.rowBody, sectionHeader, len(t.headers), h, opts, commit, rollback); err != nil {
 		return nil, err
 	}
 	return h, nil
@@ -157,22 +143,9 @@ func (t *Table) AddHeader(opts ...RowOption) (*Header, error) {
 // AddRow appends a new body row and returns it.
 func (t *Table) AddRow(opts ...RowOption) (*Row, error) {
 	r := &Row{}
-	r.rowBody.table = t
-	r.rowBody.section = sectionBody
-	r.rowBody.sectionRow = len(t.rows)
-
-	for _, o := range opts {
-		o(&r.rowBody)
-	}
-	t.bodyOcc.ensure(r.rowBody.sectionRow+1, 0)
-	if err := t.registry.register(r.id, r); err != nil {
-		return nil, err
-	}
-	t.rows = append(t.rows, r)
-
-	if err := t.flushPendingCells(&r.rowBody); err != nil {
-		t.rows = t.rows[:len(t.rows)-1]
-		t.registry.unregister(r.id)
+	commit := func() { t.rows = append(t.rows, r) }
+	rollback := func() { t.rows = t.rows[:len(t.rows)-1] }
+	if err := t.addSectionRow(&r.rowBody, sectionBody, len(t.rows), r, opts, commit, rollback); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -181,25 +154,44 @@ func (t *Table) AddRow(opts ...RowOption) (*Row, error) {
 // AddFooter appends a new footer row and returns it.
 func (t *Table) AddFooter(opts ...RowOption) (*Footer, error) {
 	f := &Footer{}
-	f.rowBody.table = t
-	f.rowBody.section = sectionFooter
-	f.rowBody.sectionRow = len(t.footers)
-
-	for _, o := range opts {
-		o(&f.rowBody)
-	}
-	t.footerOcc.ensure(f.rowBody.sectionRow+1, 0)
-	if err := t.registry.register(f.id, f); err != nil {
-		return nil, err
-	}
-	t.footers = append(t.footers, f)
-
-	if err := t.flushPendingCells(&f.rowBody); err != nil {
-		t.footers = t.footers[:len(t.footers)-1]
-		t.registry.unregister(f.id)
+	commit := func() { t.footers = append(t.footers, f) }
+	rollback := func() { t.footers = t.footers[:len(t.footers)-1] }
+	if err := t.addSectionRow(&f.rowBody, sectionFooter, len(t.footers), f, opts, commit, rollback); err != nil {
 		return nil, err
 	}
 	return f, nil
+}
+
+// addSectionRow wires a rowBody into its section, applies RowOptions,
+// reserves occupancy, registers the wrapper element's ID, and flushes
+// any pending cells. commit/rollback manage the wrapper's membership in
+// its typed section slice so error paths leave the table consistent.
+func (t *Table) addSectionRow(
+	body *rowBody,
+	section sectionKind,
+	sectionRow int,
+	wrapper Element,
+	opts []RowOption,
+	commit func(),
+	rollback func(),
+) error {
+	body.table = t
+	body.section = section
+	body.sectionRow = sectionRow
+	for _, o := range opts {
+		o(body)
+	}
+	t.occForSection(section).ensure(sectionRow+1, 0)
+	if err := t.registry.register(body.id, wrapper); err != nil {
+		return err
+	}
+	commit()
+	if err := t.flushPendingCells(body); err != nil {
+		rollback()
+		t.registry.unregister(body.id)
+		return err
+	}
+	return nil
 }
 
 // flushPendingCells attaches any cells accumulated by WithCell options
@@ -300,9 +292,10 @@ func (t *Table) occForSection(k sectionKind) *occupancyGrid {
 		return t.headerOcc
 	case sectionFooter:
 		return t.footerOcc
-	default:
+	case sectionBody:
 		return t.bodyOcc
 	}
+	return t.bodyOcc
 }
 
 // stampCell resolves the cell's anchor column within its row, performs
@@ -342,23 +335,16 @@ func (t *Table) unstampCell(c *Cell) {
 }
 
 // nextColInRow finds the lowest column >= 0 in (section, row) that is
-// not yet occupied by any prior cell or reservation.
+// not yet occupied by any prior cell or reservation. When every slot up
+// to the grid's current right edge is occupied, the next free position
+// is just past it.
 func (t *Table) nextColInRow(section sectionKind, row int) int {
 	occ := t.occForSection(section)
-	// Start scanning from column 0; nextFreeInRow will extend the grid
-	// to at least one column, which is the smallest useful probe. We
-	// then continue scanning past the point where the grid currently
-	// ends — any column beyond is by definition free.
-	c := 0
-	for {
-		free := occ.nextFreeInRow(row, c)
-		if free < occ.nCols {
-			return free
-		}
-		// No occupant at or past c up to nCols; free == nCols means the
-		// first free slot is just past the current right edge.
-		return occ.nCols
+	free := occ.nextFreeInRow(row, 0)
+	if free < occ.nCols {
+		return free
 	}
+	return occ.nCols
 }
 
 // growColumnTo ensures the columns slice has an entry at index i,
@@ -470,7 +456,7 @@ func (t *Table) rowBodyFor(c *Cell) *rowBody {
 		if c.sectionRow < len(t.footers) {
 			return &t.footers[c.sectionRow].rowBody
 		}
-	default:
+	case sectionBody:
 		if c.sectionRow < len(t.rows) {
 			return &t.rows[c.sectionRow].rowBody
 		}

@@ -24,40 +24,30 @@ func TestEmptyTableDimensions(t *testing.T) {
 }
 
 func TestNumRowsSumAcrossSections(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	if _, err := tbl.AddHeader(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tbl.AddHeader(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tbl.AddRow(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tbl.AddRow(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tbl.AddRow(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tbl.AddFooter(); err != nil {
-		t.Fatal(err)
-	}
+	h.header(tbl.AddHeader())
+	h.header(tbl.AddHeader())
+	h.row(tbl.AddRow())
+	h.row(tbl.AddRow())
+	h.row(tbl.AddRow())
+	h.footer(tbl.AddFooter())
 	if got := tbl.NumRows(); got != 6 {
 		t.Errorf("NumRows = %d, want 6 (2h + 3r + 1f)", got)
 	}
 }
 
 func TestCellAtAcrossSections(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	h, _ := tbl.AddHeader()
-	hc, _ := h.AddCell(WithCellID("hc"), WithContent("head"))
+	hd := h.header(tbl.AddHeader())
+	hc := h.cell(hd.AddCell(WithCellID("hc"), WithContent("head")))
 
-	r, _ := tbl.AddRow()
-	rc, _ := r.AddCell(WithCellID("rc"), WithContent("body"))
+	r := h.row(tbl.AddRow())
+	rc := h.cell(r.AddCell(WithCellID("rc"), WithContent("body")))
 
-	f, _ := tbl.AddFooter()
-	fc, _ := f.AddCell(WithCellID("fc"), WithContent("foot"))
+	f := h.footer(tbl.AddFooter())
+	fc := h.cell(f.AddCell(WithCellID("fc"), WithContent("foot")))
 
 	// Absolute row indices: header at 0, body at 1, footer at 2.
 	if got := tbl.CellAt(0, 0); got != hc {
@@ -78,10 +68,11 @@ func TestCellAtAcrossSections(t *testing.T) {
 }
 
 func TestCellAtSpansMapToSameCell(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	r, _ := tbl.AddRow()
-	c, _ := r.AddCell(WithContent("wide"), WithColSpan(3))
-	for col := 0; col < 3; col++ {
+	r := h.row(tbl.AddRow())
+	c := h.cell(r.AddCell(WithContent("wide"), WithColSpan(3)))
+	for col := range 3 {
 		if got := tbl.CellAt(0, col); got != c {
 			t.Errorf("CellAt(0,%d) = %v, want %v", col, got, c)
 		}
@@ -92,14 +83,11 @@ func TestCellAtSpansMapToSameCell(t *testing.T) {
 }
 
 func TestInBounds(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	r, _ := tbl.AddRow()
-	if _, err := r.AddCell(WithContent("a")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.AddCell(WithContent("b")); err != nil {
-		t.Fatal(err)
-	}
+	r := h.row(tbl.AddRow())
+	h.cell(r.AddCell(WithContent("a")))
+	h.cell(r.AddCell(WithContent("b")))
 	cases := []struct {
 		r, c int
 		want bool
@@ -141,17 +129,16 @@ func TestResolvedTargetWidth(t *testing.T) {
 }
 
 func TestColumnAutoCreation(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	r, _ := tbl.AddRow()
-	for i := 0; i < 4; i++ {
-		if _, err := r.AddCell(WithContent("x")); err != nil {
-			t.Fatal(err)
-		}
+	r := h.row(tbl.AddRow())
+	for range 4 {
+		h.cell(r.AddCell(WithContent("x")))
 	}
 	if got := tbl.NumColumns(); got != 4 {
 		t.Errorf("NumColumns = %d, want 4", got)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		col := tbl.Column(i)
 		if col == nil {
 			t.Errorf("Column(%d) is nil", i)
@@ -175,22 +162,22 @@ func TestColumnExplicitCreate(t *testing.T) {
 }
 
 func TestMultiHeaderFooterOrdering(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	h1, _ := tbl.AddHeader()
-	h1.AddCell(WithContent("h1"))
-	h2, _ := tbl.AddHeader()
-	h2.AddCell(WithContent("h2"))
-	r, _ := tbl.AddRow()
-	r.AddCell(WithContent("r"))
-	f1, _ := tbl.AddFooter()
-	f1.AddCell(WithContent("f1"))
-	f2, _ := tbl.AddFooter()
-	f2.AddCell(WithContent("f2"))
+	h1 := h.header(tbl.AddHeader())
+	h.cell(h1.AddCell(WithContent("h1")))
+	h2 := h.header(tbl.AddHeader())
+	h.cell(h2.AddCell(WithContent("h2")))
+	r := h.row(tbl.AddRow())
+	h.cell(r.AddCell(WithContent("r")))
+	f1 := h.footer(tbl.AddFooter())
+	h.cell(f1.AddCell(WithContent("f1")))
+	f2 := h.footer(tbl.AddFooter())
+	h.cell(f2.AddCell(WithContent("f2")))
 
 	if tbl.NumRows() != 5 {
 		t.Fatalf("NumRows = %d, want 5", tbl.NumRows())
 	}
-	// Expected absolute row order: h1, h2, r, f1, f2.
 	wantContents := []string{"h1", "h2", "r", "f1", "f2"}
 	for i, want := range wantContents {
 		c := tbl.CellAt(i, 0)

@@ -70,12 +70,10 @@ func TestCellOptionsApply(t *testing.T) {
 }
 
 func TestContentAndReaderMutex(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	r, err := tbl.AddRow()
-	if err != nil {
-		t.Fatalf("AddRow: %v", err)
-	}
-	_, err = r.AddCell(
+	r := h.row(tbl.AddRow())
+	_, err := r.AddCell(
 		WithContent("hi"),
 		WithReader(strings.NewReader("also hi")),
 	)
@@ -85,8 +83,9 @@ func TestContentAndReaderMutex(t *testing.T) {
 }
 
 func TestInvalidSpan(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	r, _ := tbl.AddRow()
+	r := h.row(tbl.AddRow())
 	if _, err := r.AddCell(WithColSpan(0)); !errors.Is(err, ErrInvalidSpan) {
 		t.Errorf("colSpan=0: err = %v, want ErrInvalidSpan", err)
 	}
@@ -96,14 +95,12 @@ func TestInvalidSpan(t *testing.T) {
 }
 
 func TestAddRowWithPendingCells(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
 	c1 := NewCell(WithCellID("c1"), WithContent("a"))
 	c2 := NewCell(WithCellID("c2"), WithContent("b"))
 
-	r, err := tbl.AddRow(WithRowID("r"), WithCell(c1), WithCell(c2))
-	if err != nil {
-		t.Fatalf("AddRow: %v", err)
-	}
+	r := h.row(tbl.AddRow(WithRowID("r"), WithCell(c1), WithCell(c2)))
 	if r.ID() != "r" {
 		t.Errorf("row id = %q", r.ID())
 	}
@@ -119,13 +116,14 @@ func TestAddRowWithPendingCells(t *testing.T) {
 }
 
 func TestAttachCellTwiceFails(t *testing.T) {
+	h := th{t}
 	tbl := NewTable()
-	r1, _ := tbl.AddRow()
+	r1 := h.row(tbl.AddRow())
 	c := NewCell(WithContent("x"))
 	if _, err := r1.AttachCell(c); err != nil {
 		t.Fatalf("AttachCell: %v", err)
 	}
-	r2, _ := tbl.AddRow()
+	r2 := h.row(tbl.AddRow())
 	if _, err := r2.AttachCell(c); !errors.Is(err, ErrCellAlreadyAdopted) {
 		t.Errorf("second attach: err = %v, want ErrCellAlreadyAdopted", err)
 	}

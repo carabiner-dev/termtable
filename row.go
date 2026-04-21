@@ -19,9 +19,10 @@ func (s sectionKind) String() string {
 		return "header"
 	case sectionFooter:
 		return "footer"
-	default:
+	case sectionBody:
 		return "body"
 	}
+	return "body"
 }
 
 // rowBody holds state shared by Row, Header, and Footer. It is never
@@ -57,46 +58,60 @@ type Footer struct{ rowBody }
 // the row. Returns ErrSpanConflict (wrapped with coordinates) if the
 // cell's span overlaps an occupied grid slot and the table is not
 // configured with WithSpanOverwrite(true).
-func (r *Row) AddCell(opts ...CellOption) (*Cell, error) {
-	return r.rowBody.addCell(opts)
-}
+func (r *Row) AddCell(opts ...CellOption) (*Cell, error) { return r.addCell(opts) }
 
 // AttachCell attaches a previously constructed cell to the row. The
 // cell must not already belong to another row (ErrCellAlreadyAdopted).
-func (r *Row) AttachCell(c *Cell) (*Cell, error) {
-	return r.rowBody.attachCell(c)
-}
+func (r *Row) AttachCell(c *Cell) (*Cell, error) { return r.attachCell(c) }
 
 // Cell returns the i-th cell declared in the row (logical
 // coordinate). Returns nil if i is out of range.
-func (r *Row) Cell(i int) *Cell { return r.rowBody.cellAt(i) }
+func (r *Row) Cell(i int) *Cell { return r.cellAt(i) }
 
 // Cells returns a snapshot of the cells declared in the row, in
 // declaration order. Spans are not expanded.
-func (r *Row) Cells() []*Cell { return r.rowBody.cellsCopy() }
+func (r *Row) Cells() []*Cell { return r.cellsCopy() }
 
 // ID returns the row's user-assigned ID, or the empty string.
 func (r *Row) ID() string { return r.id }
 
 func (r *Row) elementID() string { return r.id }
 
-func (h *Header) AddCell(opts ...CellOption) (*Cell, error) {
-	return h.rowBody.addCell(opts)
-}
-func (h *Header) AttachCell(c *Cell) (*Cell, error) { return h.rowBody.attachCell(c) }
-func (h *Header) Cell(i int) *Cell                  { return h.rowBody.cellAt(i) }
-func (h *Header) Cells() []*Cell                    { return h.rowBody.cellsCopy() }
-func (h *Header) ID() string                        { return h.id }
-func (h *Header) elementID() string                 { return h.id }
+// AddCell constructs a cell from the given options and attaches it to
+// the header row.
+func (h *Header) AddCell(opts ...CellOption) (*Cell, error) { return h.addCell(opts) }
 
-func (f *Footer) AddCell(opts ...CellOption) (*Cell, error) {
-	return f.rowBody.addCell(opts)
-}
-func (f *Footer) AttachCell(c *Cell) (*Cell, error) { return f.rowBody.attachCell(c) }
-func (f *Footer) Cell(i int) *Cell                  { return f.rowBody.cellAt(i) }
-func (f *Footer) Cells() []*Cell                    { return f.rowBody.cellsCopy() }
-func (f *Footer) ID() string                        { return f.id }
-func (f *Footer) elementID() string                 { return f.id }
+// AttachCell attaches a previously constructed cell to the header row.
+func (h *Header) AttachCell(c *Cell) (*Cell, error) { return h.attachCell(c) }
+
+// Cell returns the i-th cell declared in the header row.
+func (h *Header) Cell(i int) *Cell { return h.cellAt(i) }
+
+// Cells returns a snapshot of the header row's cells.
+func (h *Header) Cells() []*Cell { return h.cellsCopy() }
+
+// ID returns the header's user-assigned ID.
+func (h *Header) ID() string { return h.id }
+
+func (h *Header) elementID() string { return h.id }
+
+// AddCell constructs a cell from the given options and attaches it to
+// the footer row.
+func (f *Footer) AddCell(opts ...CellOption) (*Cell, error) { return f.addCell(opts) }
+
+// AttachCell attaches a previously constructed cell to the footer row.
+func (f *Footer) AttachCell(c *Cell) (*Cell, error) { return f.attachCell(c) }
+
+// Cell returns the i-th cell declared in the footer row.
+func (f *Footer) Cell(i int) *Cell { return f.cellAt(i) }
+
+// Cells returns a snapshot of the footer row's cells.
+func (f *Footer) Cells() []*Cell { return f.cellsCopy() }
+
+// ID returns the footer's user-assigned ID.
+func (f *Footer) ID() string { return f.id }
+
+func (f *Footer) elementID() string { return f.id }
 
 // ---------------------------------------------------------------------
 // Shared implementation on rowBody

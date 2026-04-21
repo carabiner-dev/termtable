@@ -27,12 +27,11 @@ type Cell struct {
 
 	// Content source: at most one of content / reader is set. If
 	// hasContent is true, content holds the authored string. Otherwise,
-	// reader (if non-nil) is consumed lazily on the first render pass.
+	// reader (if non-nil) is consumed lazily on the first render pass
+	// (Phase 2's measure pipeline).
 	content    string
 	hasContent bool
 	reader     io.Reader
-	resolved   bool
-	resolveErr error
 
 	colSpan int
 	rowSpan int

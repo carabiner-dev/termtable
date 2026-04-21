@@ -11,10 +11,7 @@ package termtable
 type Column struct {
 	id    string
 	index int
-	opts  columnOptions
 }
-
-type columnOptions struct{}
 
 func newColumn(index int) *Column {
 	return &Column{index: index}
