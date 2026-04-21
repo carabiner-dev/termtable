@@ -27,11 +27,14 @@ type Cell struct {
 
 	// Content source: at most one of content / reader is set. If
 	// hasContent is true, content holds the authored string. Otherwise,
-	// reader (if non-nil) is consumed lazily on the first render pass
-	// (Phase 2's measure pipeline).
+	// reader (if non-nil) is consumed by Measure on its first visit;
+	// the resulting bytes are cached back into content and hasContent
+	// is flipped so subsequent renders reuse the buffered data.
 	content    string
 	hasContent bool
 	reader     io.Reader
+	resolved   bool
+	resolveErr error
 
 	colSpan int
 	rowSpan int
