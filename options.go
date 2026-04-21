@@ -55,6 +55,26 @@ func WithSpanOverwrite(enable bool) TableOption {
 	return func(t *Table) { t.opts.spanOverwrite = enable }
 }
 
+// WithTableStyle sets table-wide style defaults via a CSS-like
+// declaration block, e.g.
+//
+//	WithTableStyle("color: white; background: blue; border-color: cyan")
+//
+// Supported properties: color, background (background-color),
+// border-color, font-weight (bold|normal), font-style (italic|normal),
+// text-decoration (underline|line-through|none). Color values may be
+// named (e.g. "red", "bright-cyan"), a hex string (#rrggbb), or
+// rgb(r,g,b). Unknown properties and unrecognized values are
+// silently ignored.
+func WithTableStyle(css string) TableOption {
+	return func(t *Table) {
+		if t.style == nil {
+			t.style = &Style{}
+		}
+		parseCSS(css, t.style)
+	}
+}
+
 // ---------------------------------------------------------------------
 // Row / Header / Footer options
 // ---------------------------------------------------------------------
@@ -70,6 +90,18 @@ func WithRowID(id string) RowOption {
 func WithCell(c *Cell) RowOption {
 	return func(r *rowBody) {
 		r.pendingCells = append(r.pendingCells, c)
+	}
+}
+
+// WithRowStyle sets a style that applies to every cell in this row
+// unless the cell overrides the corresponding properties. See
+// WithTableStyle for the supported CSS property grammar.
+func WithRowStyle(css string) RowOption {
+	return func(r *rowBody) {
+		if r.style == nil {
+			r.style = &Style{}
+		}
+		parseCSS(css, r.style)
 	}
 }
 
@@ -142,6 +174,90 @@ func WithPadding(p Padding) CellOption {
 // no observable effect yet.
 func WithMaxLines(n int) CellOption {
 	return func(c *Cell) { c.opts.maxLines = n }
+}
+
+// WithCellStyle sets style properties on the cell, cascaded over the
+// row's and table's style. See WithTableStyle for the CSS grammar.
+// Convenience options WithTextColor, WithBackgroundColor, WithBold,
+// WithItalic, WithUnderline, and WithStrikethrough set individual
+// properties and may be combined with WithCellStyle.
+func WithCellStyle(css string) CellOption {
+	return func(c *Cell) {
+		if c.style == nil {
+			c.style = &Style{}
+		}
+		parseCSS(css, c.style)
+	}
+}
+
+// WithTextColor sets the cell's foreground color. Accepts named
+// colors, a hex string, or rgb(r,g,b). Unrecognized values are
+// ignored.
+func WithTextColor(value string) CellOption {
+	return func(c *Cell) {
+		attrs, ok := parseFgColor(value)
+		if !ok {
+			return
+		}
+		ensureStyle(c).fgAttrs = attrs
+		c.style.set |= sFg
+	}
+}
+
+// WithBackgroundColor sets the cell's background color. Accepts the
+// same value grammar as WithTextColor.
+func WithBackgroundColor(value string) CellOption {
+	return func(c *Cell) {
+		attrs, ok := parseBgColor(value)
+		if !ok {
+			return
+		}
+		ensureStyle(c).bgAttrs = attrs
+		c.style.set |= sBg
+	}
+}
+
+// WithBold enables the bold text attribute on the cell.
+func WithBold() CellOption {
+	return func(c *Cell) {
+		ensureStyle(c).bold = true
+		c.style.set |= sBold
+	}
+}
+
+// WithItalic enables the italic text attribute on the cell.
+func WithItalic() CellOption {
+	return func(c *Cell) {
+		ensureStyle(c).italic = true
+		c.style.set |= sItalic
+	}
+}
+
+// WithUnderline enables the underline text attribute on the cell.
+func WithUnderline() CellOption {
+	return func(c *Cell) {
+		ensureStyle(c).underline = true
+		c.style.set |= sUnderline
+	}
+}
+
+// WithStrikethrough enables the line-through text attribute on the
+// cell. (Not every terminal renders this; supported by most modern
+// emulators.)
+func WithStrikethrough() CellOption {
+	return func(c *Cell) {
+		ensureStyle(c).strike = true
+		c.style.set |= sStrike
+	}
+}
+
+// ensureStyle returns c.style, creating a fresh Style if the cell
+// does not yet have one.
+func ensureStyle(c *Cell) *Style {
+	if c.style == nil {
+		c.style = &Style{}
+	}
+	return c.style
 }
 
 // ---------------------------------------------------------------------

@@ -34,6 +34,10 @@ type rowBody struct {
 	sectionRow int
 	cells      []*Cell
 
+	// style applies to every cell in the row unless the cell sets its
+	// own style fields. nil means "inherit from the table".
+	style *Style
+
 	// pendingCells are populated by WithCell options during AddRow /
 	// AddHeader / AddFooter; they are attached after the row is inserted
 	// into its section.

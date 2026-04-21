@@ -138,29 +138,28 @@ func (rc *renderContext) borderLine(r int) string {
 		if glyph == 0 {
 			glyph = ' '
 		}
-		b.WriteRune(glyph)
+		b.WriteString(rc.styleBorder(string(glyph)))
 		if c == rc.nCols {
 			break
 		}
 		if rc.isBorderSuppressedH(r, c) {
-			// The border passes through a rowspan cell. Emit the
-			// cell's content at this sub-line instead of a fill run.
+			// Suppressed by a rowspan: emit the cell's content at the
+			// appropriate sub-line. Cell styling (not border color)
+			// governs this slot.
 			cell := rc.t.CellAt(r, c)
 			rc.writeCellSlice(&b, cell, rc.cellSubLineAtBorder(cell, r))
-			// Advance past any further columns the same cell covers;
-			// the inner-border junctions at those boundaries are also
-			// suppressed (the junctionArms loop still visits them but
-			// emits either the cross-cell glyph or a space — handled
-			// via armE/armW suppression above).
-			//
-			// We still emit one junction per boundary, so the inner
-			// loop continues as normal.
 		} else {
 			w := rc.columnCellWidth(c)
-			b.WriteString(strings.Repeat(string(rc.border.Horizontal), w))
+			b.WriteString(rc.styleBorder(strings.Repeat(string(rc.border.Horizontal), w)))
 		}
 	}
 	return b.String()
+}
+
+// styleBorder wraps s with the table-level border color when one is
+// set, leaving it unchanged otherwise.
+func (rc *renderContext) styleBorder(s string) string {
+	return rc.t.style.applyBorder(s)
 }
 
 // contentLine renders a single content line: absolute row r,
@@ -169,51 +168,66 @@ func (rc *renderContext) borderLine(r int) string {
 // exists at the (r, c) position) emit blank space.
 func (rc *renderContext) contentLine(r, s int) string {
 	var b strings.Builder
-	b.WriteRune(rc.border.Vertical)
+	vert := rc.styleBorder(string(rc.border.Vertical))
+	b.WriteString(vert)
 	c := 0
 	for c < rc.nCols {
 		cell := rc.t.CellAt(r, c)
 		if cell == nil {
-			// Empty slot: pad a blank cell area.
 			b.WriteString(strings.Repeat(" ", rc.columnCellWidth(c)))
 			c++
 			if c < rc.nCols {
-				b.WriteRune(rc.border.Vertical)
+				b.WriteString(vert)
 			}
 			continue
 		}
-		// cell.gridCol must equal c at the anchor. If we hit a
-		// continuation column it means our c advancement was off; be
-		// defensive and skip past the span.
 		if cell.gridCol != c {
 			c = cell.gridCol + cell.colSpan
 			if c < rc.nCols {
-				b.WriteRune(rc.border.Vertical)
+				b.WriteString(vert)
 			}
 			continue
 		}
 		rc.writeCellSlice(&b, cell, rc.cellSubLineAtContent(cell, r, s))
 		c += cell.colSpan
 		if c < rc.nCols {
-			b.WriteRune(rc.border.Vertical)
+			b.WriteString(vert)
 		}
 	}
-	b.WriteRune(rc.border.Vertical)
+	b.WriteString(vert)
 	return b.String()
 }
 
 // writeCellSlice writes padding + aligned content + padding for cell
 // at the given local sub-line index within the cell's wrapped output.
 // Sub-lines past the wrapped content yield blank space, preserving the
-// cell's width.
+// cell's width. The effective style (table → row → cell) is applied
+// to the whole slot so background colors extend into the padding.
 func (rc *renderContext) writeCellSlice(b *strings.Builder, cell *Cell, subLine int) {
-	b.WriteString(strings.Repeat(" ", rc.padL))
+	var slot strings.Builder
+	slot.WriteString(strings.Repeat(" ", rc.padL))
 	var line string
 	if lines := rc.layout.wrapped[cell]; subLine >= 0 && subLine < len(lines) {
 		line = lines[subLine]
 	}
-	b.WriteString(alignText(line, rc.cellContentWidth(cell), cell.opts.align))
-	b.WriteString(strings.Repeat(" ", rc.padR))
+	slot.WriteString(alignText(line, rc.cellContentWidth(cell), cell.opts.align))
+	slot.WriteString(strings.Repeat(" ", rc.padR))
+
+	style := rc.effectiveCellStyle(cell)
+	b.WriteString(style.applyContent(slot.String()))
+}
+
+// effectiveCellStyle cascades table → row → cell styles into a
+// freshly-allocated Style whose fields are the union of the set
+// fields at each level, with lower-level overrides winning.
+func (rc *renderContext) effectiveCellStyle(cell *Cell) *Style {
+	eff := &Style{}
+	eff.merge(rc.t.style)
+	if row := rc.t.rowBodyFor(cell); row != nil {
+		eff.merge(row.style)
+	}
+	eff.merge(cell.style)
+	return eff
 }
 
 // cellSubLineAtBorder computes the sub-line index within a rowspan

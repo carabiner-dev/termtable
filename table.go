@@ -34,6 +34,10 @@ type Table struct {
 	registry *idRegistry
 	warnings []Warning
 
+	// style applies table-wide defaults. Rows and cells merge their
+	// own style over this. Border color lives here exclusively.
+	style *Style
+
 	// lastRenderErr captures any layout error surfaced by the most
 	// recent call to String or WriteTo. Exposed via LastRenderError
 	// so callers of String (which cannot return an error) can still

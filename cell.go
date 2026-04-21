@@ -45,6 +45,11 @@ type Cell struct {
 
 	opts cellOptions
 
+	// style is the cell's local style. It is merged over the row's
+	// style and the table's style to produce the effective style for
+	// rendering. nil means "inherit everything".
+	style *Style
+
 	// adopted is set once the cell belongs to a row.
 	adopted bool
 }
