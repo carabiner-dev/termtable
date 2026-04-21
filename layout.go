@@ -11,6 +11,11 @@ import "fmt"
 // the actual cell padding; Phase 2 / 3 assume the default.
 const seamWidth = 1 + 2 // border + right-pad of left col + left-pad of right col
 
+// effectivelyUnbounded stands in for "no user-specified cap" in the
+// column-width solver. Large enough that the math never pretends to
+// hit it for real tables.
+const effectivelyUnbounded = 1 << 30
+
 // layoutResult is the output of Pass 2. colAssigned gives the content
 // width per column (not including padding or borders). rowHeights gives
 // the number of rendered lines per absolute row (headers first, then
@@ -27,9 +32,32 @@ type layoutResult struct {
 }
 
 // Layout performs Pass 2 of rendering: it takes per-column widths from
-// Measure and solves a width assignment that fits within the table's
-// target width, then wraps every cell's content to those widths and
-// computes per-row heights.
+// Measure, combines them with user-supplied column configuration
+// (width / min / max / weight), solves a width assignment that fits
+// within the table's target width, then wraps every cell's content to
+// those widths and computes per-row heights.
+//
+// The solver algorithm:
+//
+//  1. Effective bounds: effMin = max(contentMin, userMin); effMax =
+//     userMax (or unbounded). Columns with SetWidth are pinned so
+//     effMin = effMax = userWidth (clamped up to contentMin on conflict,
+//     producing a best-effort overflow rather than silently cropping
+//     content).
+//  2. Feasibility: sum(effMin) must fit in the available budget.
+//     Otherwise ErrTargetTooNarrow, falling back to a best-effort
+//     layout at effMin widths.
+//  3. Initialize colAssigned to effMin. Water-fill the remaining
+//     budget by column weights (default 1.0), capped at effMax per
+//     column. Rounding leftovers distribute one-per-column left-first
+//     until consumed.
+//  4. Multi-span constraint pass: for each multi-span cell, borrow
+//     width from outside-span slack until the cell's min fits across
+//     its columns. Donors must remain >= effMin; receivers must
+//     remain <= effMax.
+//  5. Wrap every cell to its content width and compute row heights,
+//     bumping the tail row of rowspan cells when their wrapped output
+//     exceeds the natural sum of covered rows.
 //
 // Empty tables (zero columns) return an empty result with no error.
 func Layout(t *Table, m *measureResult) *layoutResult {
@@ -43,15 +71,16 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 	}
 
 	target := t.ResolvedTargetWidth()
-	fixedOverhead := (nCols + 1) + nCols*2 // borders + default L+R padding per column
+	fixedOverhead := (nCols + 1) + nCols*2
 	available := target - fixedOverhead
 	if available < 0 {
 		available = 0
 	}
 
-	// Feasibility: the sum of column minimums must fit.
+	effMin, effMax, weights := effectiveBounds(t, m, nCols)
+
 	var minSum int
-	for _, v := range m.colMin {
+	for _, v := range effMin {
 		minSum += v
 	}
 	if minSum > available {
@@ -59,56 +88,16 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 			"target width %d leaves %d for content but content minimum sums to %d: %w",
 			target, available, minSum, ErrTargetTooNarrow,
 		)
-		// Fall through and still produce a best-effort layout at the
-		// minimum widths so callers can inspect / warn on partial
-		// output if they wish.
-		copy(out.colAssigned, m.colMin)
+		copy(out.colAssigned, effMin)
 		out.rowHeights = computeRowHeights(t, out.colAssigned, out.wrapped)
 		return out
 	}
 
-	// Equal-split baseline with leftmost-first distribution of the
-	// remainder so the result is deterministic.
-	base := available / nCols
-	extra := available - base*nCols
-	for i := range nCols {
-		out.colAssigned[i] = base
-		if i < extra {
-			out.colAssigned[i]++
-		}
-	}
+	copy(out.colAssigned, effMin)
+	distributeByWeights(out.colAssigned, effMax, weights, available)
 
-	// Min-floor pass: raise any column below its minimum and remember
-	// the debt owed to the global budget.
-	var debt int
-	for i := range nCols {
-		if out.colAssigned[i] < m.colMin[i] {
-			debt += m.colMin[i] - out.colAssigned[i]
-			out.colAssigned[i] = m.colMin[i]
-		}
-	}
-	// Pay the debt by shrinking the widest slack column (furthest
-	// above its minimum). Ties break leftward.
-	for debt > 0 {
-		idx := widestSlackColumn(out.colAssigned, m.colMin)
-		if idx < 0 {
-			break
-		}
-		slack := out.colAssigned[idx] - m.colMin[idx]
-		take := slack
-		if take > debt {
-			take = debt
-		}
-		out.colAssigned[idx] -= take
-		debt -= take
-	}
-
-	// Multi-span constraint pass: for each multi-span cell, ensure
-	// the sum of its columns' assigned widths plus seams covers its
-	// minimum. Borrow from outside-span slack columns if needed.
 	for _, cons := range m.multiSpans {
-		satisfied := applyMultiSpanConstraint(out.colAssigned, m.colMin, cons)
-		if !satisfied {
+		if !applyMultiSpanConstraint(out.colAssigned, effMin, effMax, cons) {
 			out.warnings = append(out.warnings, SpanOverflowEvent{
 				CellID:   cons.cellID,
 				Required: cons.minWidth,
@@ -117,83 +106,182 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 		}
 	}
 
-	// Desired-width upgrade pass: distribute any unused budget to the
-	// columns farthest below their desired width.
-	leftover := available - sumInts(out.colAssigned)
-	for leftover > 0 {
-		idx, deficit := largestDeficit(out.colAssigned, m.colDesired)
-		if idx < 0 {
-			break
-		}
-		add := deficit
-		if add > leftover {
-			add = leftover
-		}
-		out.colAssigned[idx] += add
-		leftover -= add
-	}
-
 	out.rowHeights = computeRowHeights(t, out.colAssigned, out.wrapped)
 	return out
 }
 
-// widestSlackColumn returns the index of the column with the greatest
-// (assigned - min) difference. Returns -1 when no slack exists. Ties
-// break leftward.
-func widestSlackColumn(assigned, minima []int) int {
-	best := -1
-	var bestSlack int
-	for i := range assigned {
-		slack := assigned[i] - minima[i]
-		if slack > bestSlack {
-			bestSlack = slack
-			best = i
+// effectiveBounds combines content measurements with the per-column
+// user configuration into the three parallel slices the solver needs:
+// effMin[i] is the lower bound, effMax[i] the upper bound, and
+// weights[i] the distribution weight (defaulting to 1.0).
+func effectiveBounds(t *Table, m *measureResult, nCols int) (effMin, effMax []int, weights []float64) {
+	effMin = make([]int, nCols)
+	effMax = make([]int, nCols)
+	weights = make([]float64, nCols)
+	for i := range nCols {
+		col := t.Column(i)
+		contentMin := m.colMin[i]
+
+		minV := contentMin
+		if col.set&cMin != 0 && col.minW > minV {
+			minV = col.minW
+		}
+
+		var maxV int
+		switch {
+		case col.set&cWidth != 0:
+			pin := col.width
+			if pin < minV {
+				// Content minimum wins; the pinned width would force
+				// truncation, which we prefer to avoid. The column
+				// will overflow its requested pin.
+				maxV = minV
+			} else {
+				minV = pin
+				maxV = pin
+			}
+		case col.set&cMax != 0:
+			maxV = col.maxW
+			if maxV < minV {
+				maxV = minV
+			}
+		default:
+			maxV = effectivelyUnbounded
+		}
+
+		effMin[i] = minV
+		effMax[i] = maxV
+
+		if col.set&cWeight != 0 {
+			weights[i] = col.weight
+		} else {
+			weights[i] = 1.0
 		}
 	}
-	return best
+	return effMin, effMax, weights
+}
+
+// distributeByWeights grows assigned towards effMax until the
+// available budget is fully consumed (or all columns are capped).
+// Each round allocates floor(weight/totalWeight * remaining) to every
+// flex column; leftover from rounding is distributed one-per-column
+// left-first so the output is deterministic.
+func distributeByWeights(assigned, effMax []int, weights []float64, available int) {
+	remaining := available - sumInts(assigned)
+	for remaining > 0 {
+		flex, totalW := flexColumns(assigned, effMax, weights)
+		if len(flex) == 0 || totalW == 0 {
+			return
+		}
+		gave := 0
+		for _, f := range flex {
+			share := int(float64(remaining) * f.weight / totalW)
+			room := effMax[f.idx] - assigned[f.idx]
+			if share > room {
+				share = room
+			}
+			if share > 0 {
+				assigned[f.idx] += share
+				gave += share
+			}
+		}
+		if gave == 0 {
+			// Rounding gave every column zero. Distribute the
+			// remainder one-per-column, left to right, to keep the
+			// growth balanced.
+			toGive := remaining
+			for _, f := range flex {
+				if toGive == 0 {
+					break
+				}
+				if assigned[f.idx] < effMax[f.idx] {
+					assigned[f.idx]++
+					gave++
+					toGive--
+				}
+			}
+			if gave == 0 {
+				return
+			}
+		}
+		remaining -= gave
+	}
+}
+
+type flexCol struct {
+	idx    int
+	weight float64
+}
+
+// flexColumns returns the columns that are below their effMax and
+// carry a positive weight, along with the total of those weights.
+func flexColumns(assigned, effMax []int, weights []float64) (flex []flexCol, totalWeight float64) {
+	for i := range assigned {
+		if weights[i] <= 0 {
+			continue
+		}
+		if assigned[i] >= effMax[i] {
+			continue
+		}
+		flex = append(flex, flexCol{idx: i, weight: weights[i]})
+		totalWeight += weights[i]
+	}
+	return flex, totalWeight
 }
 
 // applyMultiSpanConstraint borrows width from outside-span columns
-// (tallest slack first) and gives it to the narrowest column inside
-// the span until the constraint is satisfied or no outside slack
-// remains. Returns true when the constraint was fully satisfied.
-func applyMultiSpanConstraint(assigned, minima []int, cons multiSpanConstraint) bool {
+// and gives it to the narrowest in-span column until the cell's
+// minimum is satisfied across its span (accounting for inter-column
+// seams) or no further progress is possible. Donors must stay at or
+// above effMin; receivers must stay at or below effMax. Returns true
+// on full satisfaction.
+func applyMultiSpanConstraint(assigned, effMin, effMax []int, cons multiSpanConstraint) bool {
 	required := cons.minWidth - (cons.colSpan-1)*seamWidth
 	if required <= 0 {
 		return true
 	}
 	for {
-		have := contentSum(assigned, cons.colStart, cons.colSpan)
-		if have >= required {
+		if contentSum(assigned, cons.colStart, cons.colSpan) >= required {
 			return true
 		}
-		need := required - have
-		donorIdx := outsideWidestSlack(assigned, minima, cons.colStart, cons.colSpan)
+		donorIdx := outsideWidestSlack(assigned, effMin, cons.colStart, cons.colSpan)
 		if donorIdx < 0 {
 			return false
 		}
-		donorSlack := assigned[donorIdx] - minima[donorIdx]
-		transfer := donorSlack
-		if transfer > need {
-			transfer = need
+		receiverIdx := insideNarrowestWithRoom(assigned, effMax, cons.colStart, cons.colSpan)
+		if receiverIdx < 0 {
+			return false
 		}
-		receiverIdx := insideNarrowest(assigned, cons.colStart, cons.colSpan)
+		have := contentSum(assigned, cons.colStart, cons.colSpan)
+		need := required - have
+		donorSlack := assigned[donorIdx] - effMin[donorIdx]
+		receiverRoom := effMax[receiverIdx] - assigned[receiverIdx]
+		transfer := need
+		if transfer > donorSlack {
+			transfer = donorSlack
+		}
+		if transfer > receiverRoom {
+			transfer = receiverRoom
+		}
+		if transfer <= 0 {
+			return false
+		}
 		assigned[donorIdx] -= transfer
 		assigned[receiverIdx] += transfer
 	}
 }
 
 // outsideWidestSlack returns the index of the column outside
-// [colStart, colStart+colSpan) with the greatest slack relative to its
-// minimum. Returns -1 when no outside slack exists.
-func outsideWidestSlack(assigned, minima []int, colStart, colSpan int) int {
+// [colStart, colStart+colSpan) with the greatest slack relative to
+// its effective minimum. Returns -1 when no outside slack exists.
+func outsideWidestSlack(assigned, effMin []int, colStart, colSpan int) int {
 	best := -1
 	var bestSlack int
 	for i := range assigned {
 		if i >= colStart && i < colStart+colSpan {
 			continue
 		}
-		slack := assigned[i] - minima[i]
+		slack := assigned[i] - effMin[i]
 		if slack > bestSlack {
 			bestSlack = slack
 			best = i
@@ -202,32 +290,20 @@ func outsideWidestSlack(assigned, minima []int, colStart, colSpan int) int {
 	return best
 }
 
-// insideNarrowest returns the index of the narrowest column inside
-// [colStart, colStart+colSpan), leftmost on ties.
-func insideNarrowest(assigned []int, colStart, colSpan int) int {
-	best := colStart
-	for i := colStart + 1; i < colStart+colSpan; i++ {
-		if assigned[i] < assigned[best] {
+// insideNarrowestWithRoom returns the index of the narrowest in-span
+// column that still has room to grow under its effMax. Returns -1
+// when every in-span column is capped.
+func insideNarrowestWithRoom(assigned, effMax []int, colStart, colSpan int) int {
+	best := -1
+	for i := colStart; i < colStart+colSpan; i++ {
+		if assigned[i] >= effMax[i] {
+			continue
+		}
+		if best < 0 || assigned[i] < assigned[best] {
 			best = i
 		}
 	}
 	return best
-}
-
-// largestDeficit returns the column index with the greatest
-// (desired - assigned) gap and the gap's size. Returns (-1, 0) when
-// all columns already meet or exceed desired.
-func largestDeficit(assigned, desired []int) (colIdx, gap int) {
-	best := -1
-	var bestGap int
-	for i := range assigned {
-		gap := desired[i] - assigned[i]
-		if gap > bestGap {
-			bestGap = gap
-			best = i
-		}
-	}
-	return best, bestGap
 }
 
 // contentSum returns the sum of assigned[colStart:colStart+colSpan].

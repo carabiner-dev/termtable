@@ -210,11 +210,25 @@ func (rc *renderContext) writeCellSlice(b *strings.Builder, cell *Cell, subLine 
 	if lines := rc.layout.wrapped[cell]; subLine >= 0 && subLine < len(lines) {
 		line = lines[subLine]
 	}
-	slot.WriteString(alignText(line, rc.cellContentWidth(cell), cell.opts.align))
+	slot.WriteString(alignText(line, rc.cellContentWidth(cell), rc.effectiveCellAlign(cell)))
 	slot.WriteString(strings.Repeat(" ", rc.padR))
 
 	style := rc.effectiveCellStyle(cell)
 	b.WriteString(style.applyContent(slot.String()))
+}
+
+// effectiveCellAlign resolves a cell's horizontal alignment, falling
+// back to the anchor column's alignment (set via Column.SetAlign) when
+// the cell did not call WithAlign. When neither is set, AlignLeft is
+// returned.
+func (rc *renderContext) effectiveCellAlign(cell *Cell) Alignment {
+	if cell.opts.alignSet {
+		return cell.opts.align
+	}
+	if col := rc.t.Column(cell.gridCol); col != nil && col.HasAlign() {
+		return col.Align()
+	}
+	return AlignLeft
 }
 
 // effectiveCellStyle cascades table → row → cell styles into a

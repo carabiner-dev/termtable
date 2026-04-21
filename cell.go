@@ -56,6 +56,7 @@ type Cell struct {
 
 type cellOptions struct {
 	align    Alignment
+	alignSet bool // true when WithAlign was called; false means fall back to column alignment
 	wrap     bool
 	trim     bool
 	padding  Padding
