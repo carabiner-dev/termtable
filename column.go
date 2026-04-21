@@ -3,6 +3,11 @@
 
 package termtable
 
+import (
+	"strconv"
+	"strings"
+)
+
 // Column is a virtual element representing a grid column. Columns are
 // created automatically as cells populate new column positions; they
 // may also be retrieved explicitly via Table.Column. Configuration is
@@ -21,13 +26,18 @@ type Column struct {
 	minW   int
 	maxW   int
 	weight float64
-	align  Alignment
+
+	// style is the column's default style. Alignment (text-align),
+	// color, background, and other attributes set here cascade to the
+	// cells that occupy this column.
+	style *Style
 
 	set columnField
 }
 
-// columnField is a bitmask marking which Column fields were set
-// explicitly by the user (as opposed to inherited or defaulted).
+// columnField is a bitmask marking which sizing fields of a Column
+// were set explicitly. Style-related fields (alignment, color, etc.)
+// live on the column's Style and use the Style's own bitmask.
 type columnField uint8
 
 const (
@@ -35,7 +45,6 @@ const (
 	cMin
 	cMax
 	cWeight
-	cAlign
 )
 
 func newColumn(index int) *Column {
@@ -111,10 +120,14 @@ func (c *Column) SetWeight(w float64) *Column {
 
 // SetAlign sets the default horizontal alignment for cells in this
 // column. Cells with their own WithAlign override this; cells without
-// an explicit alignment inherit it.
+// an explicit alignment, and rows without a row-level text-align,
+// inherit from the column.
 func (c *Column) SetAlign(a Alignment) *Column {
-	c.align = a
-	c.set |= cAlign
+	if c.style == nil {
+		c.style = &Style{}
+	}
+	c.style.align = a
+	c.style.set |= sAlign
 	return c
 }
 
@@ -148,9 +161,100 @@ func (c *Column) Weight() float64 { return c.weight }
 
 // Align returns the column's alignment override. Check HasAlign to
 // distinguish an unset value from an explicit AlignLeft.
-func (c *Column) Align() Alignment { return c.align }
+func (c *Column) Align() Alignment {
+	if c.style != nil && c.style.set&sAlign != 0 {
+		return c.style.align
+	}
+	return AlignLeft
+}
 
-// HasAlign reports whether SetAlign has been called on this column.
-// Used by the renderer to decide whether column alignment should
-// cascade to cells that did not set their own alignment.
-func (c *Column) HasAlign() bool { return c.set&cAlign != 0 }
+// HasAlign reports whether the column has an alignment override in
+// force, either from Column.SetAlign or from Column.Style with
+// text-align.
+func (c *Column) HasAlign() bool {
+	return c.style != nil && c.style.set&sAlign != 0
+}
+
+// Style parses a CSS-like declaration block and applies it to the
+// column. Sizing properties route to the imperative Set* methods
+// (so Column.Style and Column.SetWidth are interchangeable); style
+// properties populate a column-level Style that cascades to every
+// cell in the column.
+//
+// Supported sizing properties:
+//
+//	width: N           pins the column to exactly N content columns
+//	min-width: N       lower bound on content width
+//	max-width: N       upper bound on content width
+//	flex: N            weight for distributing leftover budget
+//	text-align: L|C|R  default alignment for cells in the column
+//
+// Style properties are the same set accepted by WithTableStyle
+// (color, background, font-weight, font-style, text-decoration,
+// etc.). border-color on a column is accepted but applies only to
+// cell content in that column, not to border glyphs (those are
+// table-level).
+//
+// Unrecognized properties and unparseable values are silently ignored.
+func (c *Column) Style(css string) *Column {
+	for _, decl := range strings.Split(css, ";") {
+		decl = strings.TrimSpace(decl)
+		if decl == "" {
+			continue
+		}
+		colon := strings.Index(decl, ":")
+		if colon < 0 {
+			continue
+		}
+		prop := strings.ToLower(strings.TrimSpace(decl[:colon]))
+		val := strings.TrimSpace(decl[colon+1:])
+		c.applyCSSDecl(prop, val)
+	}
+	return c
+}
+
+func (c *Column) applyCSSDecl(prop, val string) {
+	switch prop {
+	case "width":
+		if n, ok := parsePositiveInt(val); ok {
+			c.SetWidth(n)
+		}
+	case "min-width":
+		if n, ok := parsePositiveInt(val); ok {
+			c.SetMin(n)
+		}
+	case "max-width":
+		if n, ok := parsePositiveInt(val); ok {
+			c.SetMax(n)
+		}
+	case "flex":
+		if w, ok := parseNonNegFloat(val); ok {
+			c.SetWeight(w)
+		}
+	default:
+		// Fall through to the style parser for color, background,
+		// font-weight, text-align, etc. Column.SetAlign routes
+		// through the same storage so text-align here is equivalent
+		// to calling SetAlign directly.
+		if c.style == nil {
+			c.style = &Style{}
+		}
+		applyDecl(c.style, prop, val)
+	}
+}
+
+func parsePositiveInt(s string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
+}
+
+func parseNonNegFloat(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || f < 0 {
+		return 0, false
+	}
+	return f, true
+}

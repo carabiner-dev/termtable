@@ -217,26 +217,29 @@ func (rc *renderContext) writeCellSlice(b *strings.Builder, cell *Cell, subLine 
 	b.WriteString(style.applyContent(slot.String()))
 }
 
-// effectiveCellAlign resolves a cell's horizontal alignment, falling
-// back to the anchor column's alignment (set via Column.SetAlign) when
-// the cell did not call WithAlign. When neither is set, AlignLeft is
-// returned.
+// effectiveCellAlign resolves a cell's horizontal alignment. The
+// value is pulled from the effective style (which already cascades
+// table → column → row → cell); AlignLeft is the default when no
+// level has set an alignment.
 func (rc *renderContext) effectiveCellAlign(cell *Cell) Alignment {
-	if cell.opts.alignSet {
-		return cell.opts.align
-	}
-	if col := rc.t.Column(cell.gridCol); col != nil && col.HasAlign() {
-		return col.Align()
+	style := rc.effectiveCellStyle(cell)
+	if style.set&sAlign != 0 {
+		return style.align
 	}
 	return AlignLeft
 }
 
-// effectiveCellStyle cascades table → row → cell styles into a
-// freshly-allocated Style whose fields are the union of the set
-// fields at each level, with lower-level overrides winning.
+// effectiveCellStyle cascades table → column → row → cell styles
+// into a freshly-allocated Style whose fields are the union of the
+// set fields at each level, with lower-level overrides winning. Both
+// visual attributes (color, bold, etc.) and alignment flow through
+// this one cascade.
 func (rc *renderContext) effectiveCellStyle(cell *Cell) *Style {
 	eff := &Style{}
 	eff.merge(rc.t.style)
+	if col := rc.t.Column(cell.gridCol); col != nil {
+		eff.merge(col.style)
+	}
 	if row := rc.t.rowBodyFor(cell); row != nil {
 		eff.merge(row.style)
 	}

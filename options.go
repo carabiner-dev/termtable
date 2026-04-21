@@ -145,13 +145,13 @@ func WithRowSpan(n int) CellOption {
 }
 
 // WithAlign sets the cell's horizontal alignment. Default is AlignLeft.
-// Setting this overrides any column-level alignment set via
-// Column.SetAlign; cells that never call WithAlign inherit from their
-// column.
+// Stored on the cell's Style so it participates in the table → column
+// → row → cell cascade; cells that never call WithAlign inherit from
+// their row, then column, then table, defaulting to AlignLeft.
 func WithAlign(a Alignment) CellOption {
 	return func(c *Cell) {
-		c.opts.align = a
-		c.opts.alignSet = true
+		ensureStyle(c).align = a
+		c.style.set |= sAlign
 	}
 }
 

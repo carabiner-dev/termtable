@@ -25,6 +25,7 @@ type Style struct {
 	bgAttrs     []color.Attribute
 	borderAttrs []color.Attribute
 
+	align     Alignment
 	bold      bool
 	italic    bool
 	underline bool
@@ -45,6 +46,7 @@ const (
 	sItalic
 	sUnderline
 	sStrike
+	sAlign
 )
 
 // isEmpty reports whether s contributes nothing to output.
@@ -85,6 +87,10 @@ func (s *Style) merge(src *Style) {
 	if src.set&sStrike != 0 {
 		s.strike = src.strike
 		s.set |= sStrike
+	}
+	if src.set&sAlign != 0 {
+		s.align = src.align
+		s.set |= sAlign
 	}
 }
 
@@ -198,6 +204,18 @@ func applyDecl(s *Style, prop, val string) {
 		}
 	case "text-decoration":
 		applyTextDecoration(s, val)
+	case "text-align":
+		switch strings.ToLower(val) {
+		case "left":
+			s.align = AlignLeft
+			s.set |= sAlign
+		case "center":
+			s.align = AlignCenter
+			s.set |= sAlign
+		case "right":
+			s.align = AlignRight
+			s.set |= sAlign
+		}
 	}
 }
 

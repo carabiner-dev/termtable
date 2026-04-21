@@ -55,8 +55,6 @@ type Cell struct {
 }
 
 type cellOptions struct {
-	align    Alignment
-	alignSet bool // true when WithAlign was called; false means fall back to column alignment
 	wrap     bool
 	trim     bool
 	padding  Padding
@@ -65,7 +63,6 @@ type cellOptions struct {
 
 func defaultCellOptions() cellOptions {
 	return cellOptions{
-		align:   AlignLeft,
 		wrap:    true,
 		trim:    true,
 		padding: DefaultPadding(),
@@ -110,8 +107,15 @@ func (c *Cell) GridRow() int {
 // GridCol returns the zero-based column of the cell's anchor.
 func (c *Cell) GridCol() int { return c.gridCol }
 
-// Align returns the cell's horizontal alignment.
-func (c *Cell) Align() Alignment { return c.opts.align }
+// Align returns the cell's horizontal alignment. Reads the cell's
+// style; returns AlignLeft when no alignment has been set at the cell
+// level (column, row, and table cascade happens at render time).
+func (c *Cell) Align() Alignment {
+	if c.style != nil && c.style.set&sAlign != 0 {
+		return c.style.align
+	}
+	return AlignLeft
+}
 
 // Content returns the cell's authored string content. If the cell was
 // configured with WithReader and the reader has not yet been consumed,
