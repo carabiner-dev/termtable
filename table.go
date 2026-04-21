@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // defaultTargetWidth is used when no WithTargetWidth is supplied and no
@@ -32,6 +33,12 @@ type Table struct {
 
 	registry *idRegistry
 	warnings []Warning
+
+	// lastRenderErr captures any layout error surfaced by the most
+	// recent call to String or WriteTo. Exposed via LastRenderError
+	// so callers of String (which cannot return an error) can still
+	// inspect failure modes.
+	lastRenderErr error
 }
 
 type tableOptions struct {
@@ -269,15 +276,37 @@ func (t *Table) ResolvedTargetWidth() int {
 	return defaultTargetWidth
 }
 
-// String renders the table to a string. Not implemented until Phase 3.
+// String renders the table to a string. Layout errors (e.g., a target
+// width too narrow to fit content minimums) do not prevent best-effort
+// output — the renderer falls back to the minimum column widths and
+// produces a possibly-overflowing table. Inspect Table.Warnings() to
+// see non-fatal events collected during rendering; use WriteTo for
+// access to the underlying error.
 func (t *Table) String() string {
-	panic("termtable: rendering is not yet implemented (Phase 3)")
+	var b strings.Builder
+	_, t.lastRenderErr = t.WriteTo(&b)
+	return b.String()
 }
 
-// WriteTo renders the table to w. Not implemented until Phase 3.
+// LastRenderError returns the error from the most recent String or
+// WriteTo call, or nil if the last render succeeded. Useful for
+// callers that use String (which has no error return) but still want
+// to detect ErrTargetTooNarrow or similar.
+func (t *Table) LastRenderError() error { return t.lastRenderErr }
+
+// WriteTo renders the table to w. Returns the number of bytes written
+// and either a write error from w or a layout error (e.g.,
+// ErrTargetTooNarrow) — write errors take precedence when both occur.
 func (t *Table) WriteTo(w io.Writer) (int64, error) {
-	_ = w
-	panic("termtable: rendering is not yet implemented (Phase 3)")
+	m := Measure(t)
+	l := Layout(t, m)
+	t.warnings = append(t.warnings, l.warnings...)
+	out := renderTable(t, l, t.opts.border)
+	n, err := w.Write([]byte(out))
+	if err != nil {
+		return int64(n), err
+	}
+	return int64(n), l.err
 }
 
 func (t *Table) elementID() string { return t.id }
