@@ -32,7 +32,16 @@ type Table struct {
 	footerOcc *occupancyGrid
 
 	registry *idRegistry
-	warnings []Warning
+
+	// authoringWarnings accumulate from construction-time events —
+	// span overwrites, ID reassignments — and persist across renders.
+	authoringWarnings []Warning
+
+	// renderWarnings are produced by the most recent render pass
+	// (span-overflow, cross-section spans, reader errors). They are
+	// overwritten on every WriteTo call so repeated renders do not
+	// compound the same events.
+	renderWarnings []Warning
 
 	// style applies table-wide defaults. Rows and cells merge their
 	// own style over this. Border color lives here exclusively.
@@ -49,12 +58,14 @@ type tableOptions struct {
 	targetWidth    int
 	targetWidthSet bool
 	border         BorderSet
+	padding        Padding
 	spanOverwrite  bool
 }
 
 func defaultTableOptions() tableOptions {
 	return tableOptions{
-		border: DefaultSingleLine(),
+		border:  DefaultSingleLine(),
+		padding: DefaultPadding(),
 	}
 }
 
@@ -131,12 +142,15 @@ func (t *Table) Footers() []*Footer {
 	return out
 }
 
-// Warnings returns the non-fatal events accumulated so far. Currently
-// sourced from span-overwrite drops/truncations and, once rendering
-// lands, from layout-time span overflows.
+// Warnings returns the concatenation of authoring-time events (span
+// overwrites, ID reassignments) and the events produced by the most
+// recent render pass (span overflow, cross-section spans, reader
+// errors). Calling String or WriteTo multiple times does not
+// duplicate render-time events — each render overwrites them.
 func (t *Table) Warnings() []Warning {
-	out := make([]Warning, len(t.warnings))
-	copy(out, t.warnings)
+	out := make([]Warning, 0, len(t.authoringWarnings)+len(t.renderWarnings))
+	out = append(out, t.authoringWarnings...)
+	out = append(out, t.renderWarnings...)
 	return out
 }
 
@@ -292,10 +306,11 @@ func (t *Table) String() string {
 	return b.String()
 }
 
-// LastRenderError returns the error from the most recent String or
-// WriteTo call, or nil if the last render succeeded. Useful for
-// callers that use String (which has no error return) but still want
-// to detect ErrTargetTooNarrow or similar.
+// LastRenderError returns the error from the most recent call to
+// String, or nil if the last call succeeded. The value is overwritten
+// on every String call (so calling String a second time after a
+// successful render will clear a previous error). WriteTo callers do
+// not need this accessor — they receive the error directly.
 func (t *Table) LastRenderError() error { return t.lastRenderErr }
 
 // WriteTo renders the table to w. Returns the number of bytes written
@@ -304,7 +319,7 @@ func (t *Table) LastRenderError() error { return t.lastRenderErr }
 func (t *Table) WriteTo(w io.Writer) (int64, error) {
 	m := Measure(t)
 	l := Layout(t, m)
-	t.warnings = append(t.warnings, l.warnings...)
+	t.renderWarnings = append(t.renderWarnings[:0], l.warnings...)
 	out := renderTable(t, l, t.opts.border)
 	n, err := w.Write([]byte(out))
 	if err != nil {
@@ -384,7 +399,9 @@ func (t *Table) nextColInRow(section sectionKind, row int) int {
 // creating any missing columns along the way.
 func (t *Table) growColumnTo(i int) {
 	for len(t.columns) <= i {
-		t.columns = append(t.columns, newColumn(len(t.columns)))
+		col := newColumn(len(t.columns))
+		col.table = t
+		t.columns = append(t.columns, col)
 	}
 }
 
@@ -406,7 +423,7 @@ func (t *Table) overwriteVictims(victims []*Cell, r, c, rowSpan, colSpan int) {
 			t.unstampCell(v)
 			t.removeCellFromRow(v)
 			t.registry.unregister(v.id)
-			t.warnings = append(t.warnings, OverwriteEvent{
+			t.authoringWarnings = append(t.authoringWarnings, OverwriteEvent{
 				DroppedID: v.id,
 				At:        [2]int{r, c},
 			})
@@ -421,7 +438,7 @@ func (t *Table) overwriteVictims(victims []*Cell, r, c, rowSpan, colSpan int) {
 			t.unstampCell(v)
 			t.removeCellFromRow(v)
 			t.registry.unregister(v.id)
-			t.warnings = append(t.warnings, OverwriteEvent{
+			t.authoringWarnings = append(t.authoringWarnings, OverwriteEvent{
 				DroppedID: v.id,
 				At:        [2]int{r, c},
 			})
@@ -431,7 +448,7 @@ func (t *Table) overwriteVictims(victims []*Cell, r, c, rowSpan, colSpan int) {
 		v.rowSpan = newRowSpan
 		v.colSpan = newColSpan
 		t.occForSection(v.section).stamp(v, v.sectionRow, v.gridCol, v.rowSpan, v.colSpan)
-		t.warnings = append(t.warnings, OverwriteEvent{
+		t.authoringWarnings = append(t.authoringWarnings, OverwriteEvent{
 			TruncatedID: v.id,
 			NewColSpan:  newColSpan,
 			NewRowSpan:  newRowSpan,

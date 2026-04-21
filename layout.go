@@ -5,11 +5,24 @@ package termtable
 
 import "fmt"
 
-// seamWidth is the display cost of the boundary between two adjacent
-// columns — one border glyph plus two padding columns for the default
-// padding of 1 column on each side. Phase 4+ will compute this from
-// the actual cell padding; Phase 2 / 3 assume the default.
-const seamWidth = 1 + 2 // border + right-pad of left col + left-pad of right col
+// layoutGeometry snapshots the display-width contributions of the
+// table's horizontal padding and borders for use by the solver and
+// renderer. seam is the inter-column cost: one border glyph plus the
+// right padding of the left column and the left padding of the right
+// column. perColumnPad is the combined horizontal padding added
+// around each column's content area.
+type layoutGeometry struct {
+	perColumnPad int
+	seam         int
+}
+
+func tableGeometry(t *Table) layoutGeometry {
+	p := t.opts.padding
+	return layoutGeometry{
+		perColumnPad: p.Left + p.Right,
+		seam:         1 + p.Left + p.Right,
+	}
+}
 
 // effectivelyUnbounded stands in for "no user-specified cap" in the
 // column-width solver. Large enough that the math never pretends to
@@ -71,7 +84,8 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 	}
 
 	target := t.ResolvedTargetWidth()
-	fixedOverhead := (nCols + 1) + nCols*2
+	geom := tableGeometry(t)
+	fixedOverhead := (nCols + 1) + nCols*geom.perColumnPad
 	available := target - fixedOverhead
 	if available < 0 {
 		available = 0
@@ -97,7 +111,7 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 	distributeByWeights(out.colAssigned, effMax, weights, available)
 
 	for _, cons := range m.multiSpans {
-		if !applyMultiSpanConstraint(out.colAssigned, effMin, effMax, cons) {
+		if !applyMultiSpanConstraint(out.colAssigned, effMin, effMax, cons, geom.seam) {
 			out.warnings = append(out.warnings, SpanOverflowEvent{
 				CellID:   cons.cellID,
 				Required: cons.minWidth,
@@ -106,8 +120,77 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 		}
 	}
 
+	for _, re := range m.readerErrs {
+		out.warnings = append(out.warnings, ReaderErrorEvent{
+			CellID: re.cellID,
+			Err:    re.err,
+		})
+	}
+
+	detectCrossSectionSpans(t, &out.warnings)
+
 	out.rowHeights = computeRowHeights(t, out.colAssigned, out.wrapped)
 	return out
+}
+
+// detectCrossSectionSpans walks every multi-row cell and records a
+// CrossSectionSpanEvent for any that extend past the last row of
+// their section. The effective rowspan used by the row-height solver
+// and the renderer is clamped by effectiveRowSpan; the authored
+// rowSpan on the cell is preserved as-is.
+func detectCrossSectionSpans(t *Table, ws *[]Warning) {
+	visit := func(c *Cell) {
+		if c.rowSpan <= 1 {
+			return
+		}
+		eff := effectiveRowSpan(t, c)
+		if eff == c.rowSpan {
+			return
+		}
+		*ws = append(*ws, CrossSectionSpanEvent{
+			CellID:        c.id,
+			DeclaredSpan:  c.rowSpan,
+			EffectiveSpan: eff,
+			Section:       c.section.String(),
+		})
+	}
+	for _, h := range t.headers {
+		for _, c := range h.cells {
+			visit(c)
+		}
+	}
+	for _, r := range t.rows {
+		for _, c := range r.cells {
+			visit(c)
+		}
+	}
+	for _, f := range t.footers {
+		for _, c := range f.cells {
+			visit(c)
+		}
+	}
+}
+
+// effectiveRowSpan returns the cell's rowSpan clamped so it does not
+// extend past the last row of its section. Returns at least 1.
+func effectiveRowSpan(t *Table, c *Cell) int {
+	var sectionRows int
+	switch c.section {
+	case sectionHeader:
+		sectionRows = len(t.headers)
+	case sectionFooter:
+		sectionRows = len(t.footers)
+	case sectionBody:
+		sectionRows = len(t.rows)
+	}
+	remaining := sectionRows - c.sectionRow
+	if remaining < 1 {
+		remaining = 1
+	}
+	if c.rowSpan > remaining {
+		return remaining
+	}
+	return c.rowSpan
 }
 
 // effectiveBounds combines content measurements with the per-column
@@ -235,8 +318,8 @@ func flexColumns(assigned, effMax []int, weights []float64) (flex []flexCol, tot
 // seams) or no further progress is possible. Donors must stay at or
 // above effMin; receivers must stay at or below effMax. Returns true
 // on full satisfaction.
-func applyMultiSpanConstraint(assigned, effMin, effMax []int, cons multiSpanConstraint) bool {
-	required := cons.minWidth - (cons.colSpan-1)*seamWidth
+func applyMultiSpanConstraint(assigned, effMin, effMax []int, cons multiSpanConstraint, seam int) bool {
+	required := cons.minWidth - (cons.colSpan-1)*seam
 	if required <= 0 {
 		return true
 	}
@@ -331,9 +414,10 @@ func sumInts(xs []int) int {
 func computeRowHeights(t *Table, assigned []int, wrapped map[*Cell][]string) []int {
 	totalRows := len(t.headers) + len(t.rows) + len(t.footers)
 	heights := make([]int, totalRows)
+	geom := tableGeometry(t)
 
 	wrapCell := func(c *Cell) []string {
-		w := contentSum(assigned, c.gridCol, c.colSpan) + (c.colSpan-1)*seamWidth
+		w := contentSum(assigned, c.gridCol, c.colSpan) + (c.colSpan-1)*geom.seam
 		if w <= 0 {
 			return nil
 		}
@@ -379,19 +463,22 @@ func computeRowHeights(t *Table, assigned []int, wrapped map[*Cell][]string) []i
 	processSection(bBodies, bodyOffset)
 	processSection(fBodies, footerOffset)
 
-	// Rowspan bump pass.
+	// Rowspan bump pass. Use the effective (section-clamped) rowspan
+	// so a rowspan declared past the last header/footer doesn't index
+	// into the neighboring section's rows.
 	for cell, lines := range wrapped {
 		if cell.rowSpan == 1 {
 			continue
 		}
 		absStart := absRowOf(t, cell)
+		eff := effectiveRowSpan(t, cell)
 		var have int
-		for i := range cell.rowSpan {
+		for i := range eff {
 			have += heights[absStart+i]
 		}
 		need := len(lines)
 		if need > have {
-			heights[absStart+cell.rowSpan-1] += need - have
+			heights[absStart+eff-1] += need - have
 		}
 	}
 

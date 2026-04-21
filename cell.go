@@ -12,9 +12,9 @@ type Padding struct {
 	Left, Right, Top, Bottom int
 }
 
-// DefaultPadding is the padding applied to a cell when WithPadding is
-// not supplied: one column of left/right breathing room, no vertical
-// padding.
+// DefaultPadding is the padding applied table-wide when
+// WithTablePadding is not supplied: one column of left/right
+// breathing room, no vertical padding.
 func DefaultPadding() Padding {
 	return Padding{Left: 1, Right: 1, Top: 0, Bottom: 0}
 }
@@ -24,6 +24,11 @@ func DefaultPadding() Padding {
 // their anchor (GridRow, GridCol) and span (ColSpan, RowSpan).
 type Cell struct {
 	id string
+
+	// table is the owning table, set when the cell is attached to a
+	// row. Retained so Cell methods can resolve cross-section
+	// information (e.g., absolute grid row).
+	table *Table
 
 	// Content source: at most one of content / reader is set. If
 	// hasContent is true, content holds the authored string. Otherwise,
@@ -57,15 +62,13 @@ type Cell struct {
 type cellOptions struct {
 	wrap     bool
 	trim     bool
-	padding  Padding
 	maxLines int // 0 = unbounded; reserved hook for a later phase
 }
 
 func defaultCellOptions() cellOptions {
 	return cellOptions{
-		wrap:    true,
-		trim:    true,
-		padding: DefaultPadding(),
+		wrap: true,
+		trim: true,
 	}
 }
 
@@ -94,14 +97,15 @@ func (c *Cell) ColSpan() int { return c.colSpan }
 // section.
 func (c *Cell) RowSpan() int { return c.rowSpan }
 
-// GridRow returns the absolute grid row of the cell's anchor across the
-// whole table (headers, body, then footers concatenated).
+// GridRow returns the absolute grid row of the cell's anchor across
+// the whole table (headers first, then body, then footers). For
+// detached cells (constructed with NewCell but never attached to a
+// row), returns the section-local row since no table context exists.
 func (c *Cell) GridRow() int {
-	// Phase 1: callers that need section-local coordinates use SectionRow.
-	// The absolute row is computed lazily against the owning table; until
-	// that wiring lands in Phase 2, return the section-local row so tests
-	// can still assert geometry.
-	return c.sectionRow
+	if c.table == nil {
+		return c.sectionRow
+	}
+	return absRowOf(c.table, c)
 }
 
 // GridCol returns the zero-based column of the cell's anchor.

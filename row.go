@@ -162,6 +162,7 @@ func (r *rowBody) attachCell(c *Cell) (*Cell, error) {
 
 	c.section = r.section
 	c.sectionRow = r.sectionRow
+	c.table = r.table
 
 	if err := r.table.stampCell(c); err != nil {
 		return nil, err

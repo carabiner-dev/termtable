@@ -26,9 +26,6 @@ func TestNewCellDefaults(t *testing.T) {
 	if !c.opts.trim {
 		t.Error("trim default should be true")
 	}
-	if c.opts.padding != DefaultPadding() {
-		t.Errorf("padding = %+v, want %+v", c.opts.padding, DefaultPadding())
-	}
 	if c.opts.maxLines != 0 {
 		t.Errorf("maxLines default = %d, want 0 (unbounded)", c.opts.maxLines)
 	}
@@ -43,7 +40,6 @@ func TestCellOptionsApply(t *testing.T) {
 		WithAlign(AlignRight),
 		WithWrap(false),
 		WithTrim(false),
-		WithPadding(Padding{Left: 2, Right: 2}),
 		WithMaxLines(5),
 	)
 	if c.ID() != "x" {
@@ -60,9 +56,6 @@ func TestCellOptionsApply(t *testing.T) {
 	}
 	if c.opts.wrap || c.opts.trim {
 		t.Error("wrap/trim should be false")
-	}
-	if c.opts.padding.Left != 2 || c.opts.padding.Right != 2 {
-		t.Errorf("padding = %+v", c.opts.padding)
 	}
 	if c.opts.maxLines != 5 {
 		t.Errorf("maxLines = %d", c.opts.maxLines)

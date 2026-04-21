@@ -14,22 +14,22 @@ type renderContext struct {
 	border BorderSet
 	nCols  int
 	nRows  int
-	// Default padding: Phase 3 uses a uniform 1-column left/right pad.
-	// Cell-level padding overrides are plumbed through options but not
-	// honored here; Phase 4 will wire them up.
-	padL int
-	padR int
+	padL   int
+	padR   int
+	seam   int
 }
 
 func newRenderContext(t *Table, l *layoutResult, b BorderSet) *renderContext {
+	geom := tableGeometry(t)
 	return &renderContext{
 		t:      t,
 		layout: l,
 		border: b,
 		nCols:  t.NumColumns(),
 		nRows:  t.NumRows(),
-		padL:   1,
-		padR:   1,
+		padL:   t.opts.padding.Left,
+		padR:   t.opts.padding.Right,
+		seam:   geom.seam,
 	}
 }
 
@@ -74,7 +74,7 @@ func (rc *renderContext) columnCellWidth(c int) int {
 // paddings become part of the cell's space.
 func (rc *renderContext) cellContentWidth(cell *Cell) int {
 	return contentSum(rc.layout.colAssigned, cell.gridCol, cell.colSpan) +
-		(cell.colSpan-1)*seamWidth
+		(cell.colSpan-1)*rc.seam
 }
 
 // isBorderSuppressedH reports whether the horizontal border segment

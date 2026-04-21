@@ -96,6 +96,37 @@ func (e SpanOverflowEvent) String() string {
 	return "span overflow: cell id=" + quote(e.CellID)
 }
 
+// ReaderErrorEvent is recorded when Measure's lazy reader consumption
+// fails. The affected cell renders as empty; the error is preserved
+// for inspection via Table.Warnings.
+type ReaderErrorEvent struct {
+	CellID string
+	Err    error
+}
+
+func (ReaderErrorEvent) warningTag() {}
+
+func (e ReaderErrorEvent) String() string {
+	return "reader error: cell id=" + quote(e.CellID) + ": " + e.Err.Error()
+}
+
+// CrossSectionSpanEvent is recorded when a rowSpan declared on a cell
+// reaches beyond the last row of its section (headers, body, or
+// footers). Rendering clamps the effective rowspan to the section
+// boundary; authored rowSpan on the Cell is preserved as-is.
+type CrossSectionSpanEvent struct {
+	CellID        string
+	DeclaredSpan  int
+	EffectiveSpan int
+	Section       string
+}
+
+func (CrossSectionSpanEvent) warningTag() {}
+
+func (e CrossSectionSpanEvent) String() string {
+	return "rowspan crosses section boundary: cell id=" + quote(e.CellID)
+}
+
 func quote(s string) string {
 	if s == "" {
 		return `""`

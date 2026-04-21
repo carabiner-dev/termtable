@@ -23,7 +23,15 @@ type measureResult struct {
 	colMin     []int
 	colDesired []int
 	multiSpans []multiSpanConstraint
-	readerErrs []error
+	readerErrs []readerErr
+}
+
+// readerErr pairs a cell's ID with the error returned by its attached
+// io.Reader. Kept internal so Layout can translate it into a public
+// ReaderErrorEvent without exposing the intermediate shape.
+type readerErr struct {
+	cellID string
+	err    error
 }
 
 // Measure performs Pass 1 of rendering: it walks every cell in the
@@ -45,7 +53,7 @@ func Measure(t *Table) *measureResult {
 	visit := func(c *Cell) {
 		content, err := resolveCellContent(c)
 		if err != nil {
-			out.readerErrs = append(out.readerErrs, err)
+			out.readerErrs = append(out.readerErrs, readerErr{cellID: c.id, err: err})
 		}
 		minW := MinUnbreakableWidth(content)
 		desW := maxLineWidth(content)

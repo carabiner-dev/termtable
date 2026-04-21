@@ -22,6 +22,11 @@ type Column struct {
 	id    string
 	index int
 
+	// table is the owning Table. Set in newColumn via Table.growColumnTo.
+	// Retained so SetID can register the column with the table's ID
+	// registry.
+	table *Table
+
 	width  int
 	minW   int
 	maxW   int
@@ -53,6 +58,36 @@ func newColumn(index int) *Column {
 
 // ID returns the column's user-assigned ID, or the empty string.
 func (c *Column) ID() string { return c.id }
+
+// SetID assigns the column an ID that can be resolved via
+// Table.GetElementByID. Passing an empty string unsets a previously
+// assigned ID. Returns an error only if the new ID collides with an
+// existing element's ID in the same table.
+func (c *Column) SetID(id string) error {
+	if c.table == nil {
+		c.id = id
+		return nil
+	}
+	if c.id != "" {
+		c.table.registry.unregister(c.id)
+	}
+	if id == "" {
+		c.id = ""
+		return nil
+	}
+	if err := c.table.registry.register(id, c); err != nil {
+		// Re-register the old id on failure so state stays consistent.
+		// The old id was registered before; re-registering the same
+		// (id, element) pair cannot fail because the registry treats
+		// an identical mapping as a no-op.
+		if c.id != "" {
+			c.table.registry.m[c.id] = c
+		}
+		return err
+	}
+	c.id = id
+	return nil
+}
 
 // Index returns the zero-based column index.
 func (c *Column) Index() int { return c.index }
@@ -190,10 +225,9 @@ func (c *Column) HasAlign() bool {
 //	text-align: L|C|R  default alignment for cells in the column
 //
 // Style properties are the same set accepted by WithTableStyle
-// (color, background, font-weight, font-style, text-decoration,
-// etc.). border-color on a column is accepted but applies only to
-// cell content in that column, not to border glyphs (those are
-// table-level).
+// (color, background, font-weight, font-style, text-decoration).
+// border-color at column level is ignored — border glyphs are
+// table-wide and configured via WithTableStyle.
 //
 // Unrecognized properties and unparseable values are silently ignored.
 func (c *Column) Style(css string) *Column {
@@ -231,6 +265,9 @@ func (c *Column) applyCSSDecl(prop, val string) {
 		if w, ok := parseNonNegFloat(val); ok {
 			c.SetWeight(w)
 		}
+	case "border-color":
+		// Intentionally ignored: border glyphs are table-wide and not
+		// per-column. Documented in Column.Style.
 	default:
 		// Fall through to the style parser for color, background,
 		// font-weight, text-align, etc. Column.SetAlign routes

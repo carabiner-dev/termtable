@@ -16,10 +16,6 @@ type RowOption func(*rowBody)
 // CellOption configures a *Cell during NewCell, AddCell, or AttachCell.
 type CellOption func(*Cell)
 
-// ColumnOption configures a *Column. Reserved for a later phase; no
-// column configuration exists yet.
-type ColumnOption func(*Column)
-
 // ---------------------------------------------------------------------
 // Table options
 // ---------------------------------------------------------------------
@@ -53,6 +49,14 @@ func WithBorder(b BorderSet) TableOption {
 // in Table.Warnings.
 func WithSpanOverwrite(enable bool) TableOption {
 	return func(t *Table) { t.opts.spanOverwrite = enable }
+}
+
+// WithTablePadding overrides the table-wide cell padding. Padding is
+// uniform across every cell — configuring it per-cell would let
+// columns misalign. Default is DefaultPadding() (one column of
+// horizontal padding, no vertical).
+func WithTablePadding(p Padding) TableOption {
+	return func(t *Table) { t.opts.padding = p }
 }
 
 // WithTableStyle sets table-wide style defaults via a CSS-like
@@ -169,12 +173,6 @@ func WithTrim(enable bool) CellOption {
 	return func(c *Cell) { c.opts.trim = enable }
 }
 
-// WithPadding overrides the default cell padding. Default is
-// DefaultPadding().
-func WithPadding(p Padding) CellOption {
-	return func(c *Cell) { c.opts.padding = p }
-}
-
 // WithMaxLines caps the cell's wrapped content to at most n lines. A
 // value of 0 means unbounded (the default). Plumbed for Phase 4+; has
 // no observable effect yet.
@@ -266,11 +264,5 @@ func ensureStyle(c *Cell) *Style {
 	return c.style
 }
 
-// ---------------------------------------------------------------------
-// Column options (reserved)
-// ---------------------------------------------------------------------
-
-// WithColumnID assigns a unique ID to a column.
-func WithColumnID(id string) ColumnOption {
-	return func(c *Column) { c.id = id }
-}
+// Column configuration is imperative: retrieve a column via
+// Table.Column(i) and call its Set* methods or Style(css).
