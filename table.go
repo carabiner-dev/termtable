@@ -1,0 +1,479 @@
+// SPDX-FileCopyrightText: Copyright 2026 Carabiner Systems, Inc
+// SPDX-License-Identifier: Apache-2.0
+
+package termtable
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+)
+
+// defaultTargetWidth is used when no WithTargetWidth is supplied and no
+// COLUMNS environment variable is set.
+const defaultTargetWidth = 80
+
+// Table is the root element. It owns the column list, the header / body
+// / footer row collections, the ID registry, and the occupancy grids
+// used for span tracking.
+type Table struct {
+	id      string
+	opts    tableOptions
+	columns []*Column
+
+	headers []*Header
+	rows    []*Row
+	footers []*Footer
+
+	headerOcc *occupancyGrid
+	bodyOcc   *occupancyGrid
+	footerOcc *occupancyGrid
+
+	registry *idRegistry
+	warnings []Warning
+}
+
+type tableOptions struct {
+	targetWidth    int
+	targetWidthSet bool
+	border         BorderSet
+	spanOverwrite  bool
+}
+
+func defaultTableOptions() tableOptions {
+	return tableOptions{
+		border: DefaultSingleLine(),
+	}
+}
+
+// NewTable constructs an empty table configured with the given options.
+func NewTable(opts ...TableOption) *Table {
+	t := &Table{
+		opts:      defaultTableOptions(),
+		headerOcc: newOccupancyGrid(),
+		bodyOcc:   newOccupancyGrid(),
+		footerOcc: newOccupancyGrid(),
+		registry:  newIDRegistry(),
+	}
+	for _, o := range opts {
+		o(t)
+	}
+	if t.id != "" {
+		// Register the table's own ID so GetElementByID can return it.
+		// A conflict with itself is benign; ignore the error.
+		_ = t.registry.register(t.id, t)
+	}
+	return t
+}
+
+// ID returns the table's user-assigned ID, or the empty string.
+func (t *Table) ID() string { return t.id }
+
+// NumColumns returns the number of columns currently present in the
+// table. Columns grow as cells populate new positions.
+func (t *Table) NumColumns() int { return len(t.columns) }
+
+// NumRows returns the total number of rows across all sections
+// (headers + body + footers).
+func (t *Table) NumRows() int {
+	return len(t.headers) + len(t.rows) + len(t.footers)
+}
+
+// Column returns the virtual Column element at index i, creating it
+// (and any earlier missing columns) on demand.
+func (t *Table) Column(i int) *Column {
+	if i < 0 {
+		return nil
+	}
+	for len(t.columns) <= i {
+		t.growColumnTo(len(t.columns))
+	}
+	return t.columns[i]
+}
+
+// Columns returns a snapshot of the table's columns in index order.
+func (t *Table) Columns() []*Column {
+	out := make([]*Column, len(t.columns))
+	copy(out, t.columns)
+	return out
+}
+
+// Headers returns a snapshot of the table's header rows.
+func (t *Table) Headers() []*Header {
+	out := make([]*Header, len(t.headers))
+	copy(out, t.headers)
+	return out
+}
+
+// Rows returns a snapshot of the table's body rows.
+func (t *Table) Rows() []*Row {
+	out := make([]*Row, len(t.rows))
+	copy(out, t.rows)
+	return out
+}
+
+// Footers returns a snapshot of the table's footer rows.
+func (t *Table) Footers() []*Footer {
+	out := make([]*Footer, len(t.footers))
+	copy(out, t.footers)
+	return out
+}
+
+// Warnings returns the non-fatal events accumulated so far. Currently
+// sourced from span-overwrite drops/truncations and, once rendering
+// lands, from layout-time span overflows.
+func (t *Table) Warnings() []Warning {
+	out := make([]Warning, len(t.warnings))
+	copy(out, t.warnings)
+	return out
+}
+
+// AddHeader appends a new header row and returns it.
+func (t *Table) AddHeader(opts ...RowOption) (*Header, error) {
+	h := &Header{}
+	h.rowBody.table = t
+	h.rowBody.section = sectionHeader
+	h.rowBody.sectionRow = len(t.headers)
+
+	for _, o := range opts {
+		o(&h.rowBody)
+	}
+	t.headerOcc.ensure(h.rowBody.sectionRow+1, 0)
+	if err := t.registry.register(h.id, h); err != nil {
+		return nil, err
+	}
+	t.headers = append(t.headers, h)
+
+	if err := t.flushPendingCells(&h.rowBody); err != nil {
+		// Roll back: remove header from slice and unregister.
+		t.headers = t.headers[:len(t.headers)-1]
+		t.registry.unregister(h.id)
+		return nil, err
+	}
+	return h, nil
+}
+
+// AddRow appends a new body row and returns it.
+func (t *Table) AddRow(opts ...RowOption) (*Row, error) {
+	r := &Row{}
+	r.rowBody.table = t
+	r.rowBody.section = sectionBody
+	r.rowBody.sectionRow = len(t.rows)
+
+	for _, o := range opts {
+		o(&r.rowBody)
+	}
+	t.bodyOcc.ensure(r.rowBody.sectionRow+1, 0)
+	if err := t.registry.register(r.id, r); err != nil {
+		return nil, err
+	}
+	t.rows = append(t.rows, r)
+
+	if err := t.flushPendingCells(&r.rowBody); err != nil {
+		t.rows = t.rows[:len(t.rows)-1]
+		t.registry.unregister(r.id)
+		return nil, err
+	}
+	return r, nil
+}
+
+// AddFooter appends a new footer row and returns it.
+func (t *Table) AddFooter(opts ...RowOption) (*Footer, error) {
+	f := &Footer{}
+	f.rowBody.table = t
+	f.rowBody.section = sectionFooter
+	f.rowBody.sectionRow = len(t.footers)
+
+	for _, o := range opts {
+		o(&f.rowBody)
+	}
+	t.footerOcc.ensure(f.rowBody.sectionRow+1, 0)
+	if err := t.registry.register(f.id, f); err != nil {
+		return nil, err
+	}
+	t.footers = append(t.footers, f)
+
+	if err := t.flushPendingCells(&f.rowBody); err != nil {
+		t.footers = t.footers[:len(t.footers)-1]
+		t.registry.unregister(f.id)
+		return nil, err
+	}
+	return f, nil
+}
+
+// flushPendingCells attaches any cells accumulated by WithCell options
+// during row construction. On the first error the newly-attached cells
+// are unstamped and the error is returned.
+func (t *Table) flushPendingCells(r *rowBody) error {
+	attached := make([]*Cell, 0, len(r.pendingCells))
+	for _, c := range r.pendingCells {
+		if _, err := r.attachCell(c); err != nil {
+			// Roll back any cells attached so far in this flush.
+			for _, a := range attached {
+				t.unstampCell(a)
+				t.registry.unregister(a.id)
+			}
+			r.cells = r.cells[:len(r.cells)-len(attached)]
+			return err
+		}
+		attached = append(attached, c)
+	}
+	r.pendingCells = nil
+	return nil
+}
+
+// GetElementByID looks up any named element in the table: the table
+// itself, a column, a header/body/footer row, or a cell. Returns nil
+// if no element with that ID is registered.
+func (t *Table) GetElementByID(id string) Element {
+	return t.registry.lookup(id)
+}
+
+// CellAt returns the cell covering absolute grid coordinate (r, c). r
+// is interpreted as: rows [0, len(Headers)) index into headers; rows
+// [len(Headers), len(Headers)+len(Rows)) index into the body; the
+// remainder index into footers. Returns nil if (r, c) is out of
+// bounds or the slot is unoccupied.
+func (t *Table) CellAt(r, c int) *Cell {
+	hEnd := len(t.headers)
+	bEnd := hEnd + len(t.rows)
+	switch {
+	case r < 0:
+		return nil
+	case r < hEnd:
+		return t.headerOcc.at(r, c)
+	case r < bEnd:
+		return t.bodyOcc.at(r-hEnd, c)
+	default:
+		return t.footerOcc.at(r-bEnd, c)
+	}
+}
+
+// InBounds reports whether (r, c) is a valid grid coordinate within the
+// table's current dimensions.
+func (t *Table) InBounds(r, c int) bool {
+	if r < 0 || c < 0 {
+		return false
+	}
+	if r >= t.NumRows() {
+		return false
+	}
+	return c < t.NumColumns()
+}
+
+// ResolvedTargetWidth returns the target width the table will use for
+// layout. It resolves in this order: explicit WithTargetWidth, then
+// the COLUMNS environment variable, then defaultTargetWidth.
+func (t *Table) ResolvedTargetWidth() int {
+	if t.opts.targetWidthSet && t.opts.targetWidth > 0 {
+		return t.opts.targetWidth
+	}
+	if v := os.Getenv("COLUMNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultTargetWidth
+}
+
+// String renders the table to a string. Not implemented until Phase 3.
+func (t *Table) String() string {
+	panic("termtable: rendering is not yet implemented (Phase 3)")
+}
+
+// WriteTo renders the table to w. Not implemented until Phase 3.
+func (t *Table) WriteTo(w io.Writer) (int64, error) {
+	_ = w
+	panic("termtable: rendering is not yet implemented (Phase 3)")
+}
+
+func (t *Table) elementID() string { return t.id }
+
+// ---------------------------------------------------------------------
+// Helpers used by rowBody / cell attachment
+// ---------------------------------------------------------------------
+
+func (t *Table) occForSection(k sectionKind) *occupancyGrid {
+	switch k {
+	case sectionHeader:
+		return t.headerOcc
+	case sectionFooter:
+		return t.footerOcc
+	default:
+		return t.bodyOcc
+	}
+}
+
+// stampCell resolves the cell's anchor column within its row, performs
+// conflict detection, and stamps the section's occupancy grid. On
+// success it also grows the table's column list to cover the cell's
+// span.
+func (t *Table) stampCell(c *Cell) error {
+	occ := t.occForSection(c.section)
+	// Determine the anchor column: start at the column after the last
+	// cell already in the row and advance past reserved slots.
+	startCol := t.nextColInRow(c.section, c.sectionRow)
+	// Verify no conflict in the full rectangle.
+	if victims := occ.occupantsIn(c.sectionRow, startCol, c.rowSpan, c.colSpan); len(victims) > 0 {
+		if !t.opts.spanOverwrite {
+			return fmt.Errorf(
+				"%s row %d col %d span %dx%d: %w",
+				c.section, c.sectionRow, startCol, c.rowSpan, c.colSpan,
+				ErrSpanConflict,
+			)
+		}
+		t.overwriteVictims(victims, c.sectionRow, startCol, c.rowSpan, c.colSpan)
+	}
+	c.gridCol = startCol
+	occ.stamp(c, c.sectionRow, startCol, c.rowSpan, c.colSpan)
+	// Grow the table's columns to cover this cell's span.
+	t.growColumnTo(startCol + c.colSpan - 1)
+	return nil
+}
+
+// unstampCell removes a cell's span from its section's occupancy grid.
+func (t *Table) unstampCell(c *Cell) {
+	if c == nil {
+		return
+	}
+	occ := t.occForSection(c.section)
+	occ.unstamp(c, c.sectionRow, c.gridCol, c.rowSpan, c.colSpan)
+}
+
+// nextColInRow finds the lowest column >= 0 in (section, row) that is
+// not yet occupied by any prior cell or reservation.
+func (t *Table) nextColInRow(section sectionKind, row int) int {
+	occ := t.occForSection(section)
+	// Start scanning from column 0; nextFreeInRow will extend the grid
+	// to at least one column, which is the smallest useful probe. We
+	// then continue scanning past the point where the grid currently
+	// ends — any column beyond is by definition free.
+	c := 0
+	for {
+		free := occ.nextFreeInRow(row, c)
+		if free < occ.nCols {
+			return free
+		}
+		// No occupant at or past c up to nCols; free == nCols means the
+		// first free slot is just past the current right edge.
+		return occ.nCols
+	}
+}
+
+// growColumnTo ensures the columns slice has an entry at index i,
+// creating any missing columns along the way.
+func (t *Table) growColumnTo(i int) {
+	for len(t.columns) <= i {
+		t.columns = append(t.columns, newColumn(len(t.columns)))
+	}
+}
+
+// overwriteVictims applies the WithSpanOverwrite(true) policy: cells
+// whose anchors lie within the overwriter's rectangle are fully
+// dropped; cells whose anchors lie outside but whose spans overlap are
+// truncated back to the largest rectangle anchored at their original
+// anchor that does not intersect the overwriter.
+func (t *Table) overwriteVictims(victims []*Cell, r, c, rowSpan, colSpan int) {
+	rEnd := r + rowSpan
+	cEnd := c + colSpan
+	for _, v := range victims {
+		vREnd := v.sectionRow + v.rowSpan
+		vCEnd := v.gridCol + v.colSpan
+		anchorInside := v.sectionRow >= r && v.sectionRow < rEnd &&
+			v.gridCol >= c && v.gridCol < cEnd
+		if anchorInside {
+			// Drop the victim entirely.
+			t.unstampCell(v)
+			t.removeCellFromRow(v)
+			t.registry.unregister(v.id)
+			t.warnings = append(t.warnings, OverwriteEvent{
+				DroppedID: v.id,
+				At:        [2]int{r, c},
+			})
+			continue
+		}
+		// Truncate: clear the victim completely, then re-stamp at the
+		// largest rectangle from its anchor that does not intersect the
+		// overwriter.
+		newRowSpan, newColSpan := truncatedSpan(v.sectionRow, v.gridCol, vREnd, vCEnd, r, c, rEnd, cEnd)
+		if newRowSpan < 1 || newColSpan < 1 {
+			// Degenerate: treat as drop.
+			t.unstampCell(v)
+			t.removeCellFromRow(v)
+			t.registry.unregister(v.id)
+			t.warnings = append(t.warnings, OverwriteEvent{
+				DroppedID: v.id,
+				At:        [2]int{r, c},
+			})
+			continue
+		}
+		t.unstampCell(v)
+		v.rowSpan = newRowSpan
+		v.colSpan = newColSpan
+		t.occForSection(v.section).stamp(v, v.sectionRow, v.gridCol, v.rowSpan, v.colSpan)
+		t.warnings = append(t.warnings, OverwriteEvent{
+			TruncatedID: v.id,
+			NewColSpan:  newColSpan,
+			NewRowSpan:  newRowSpan,
+			At:          [2]int{r, c},
+		})
+	}
+}
+
+// truncatedSpan computes the largest rectangle anchored at
+// (vr0, vc0) with original extent (vr1, vc1) that does not intersect
+// the rectangle (r0, c0)..(r1, c1). The anchor is assumed outside the
+// overwriter.
+func truncatedSpan(vr0, vc0, vr1, vc1, r0, c0, r1, c1 int) (rowSpan, colSpan int) {
+	rowSpan = vr1 - vr0
+	colSpan = vc1 - vc0
+	// Vertical clipping: if the victim's vertical range overlaps the
+	// overwriter's vertical range AND the victim ends inside or past
+	// it, clip the victim's height so it stops just before the
+	// overwriter's top edge. Only meaningful when vr0 < r0.
+	if vr0 < r0 && vr1 > r0 && colRangesOverlap(vc0, vc1, c0, c1) {
+		rowSpan = r0 - vr0
+	}
+	// Horizontal clipping: analogous.
+	if vc0 < c0 && vc1 > c0 && rowRangesOverlap(vr0, vr1, r0, r1) {
+		colSpan = c0 - vc0
+	}
+	return rowSpan, colSpan
+}
+
+func colRangesOverlap(a0, a1, b0, b1 int) bool { return a0 < b1 && b0 < a1 }
+func rowRangesOverlap(a0, a1, b0, b1 int) bool { return a0 < b1 && b0 < a1 }
+
+// removeCellFromRow deletes cell c from its owning row's cells slice.
+// No-op if the cell is not found.
+func (t *Table) removeCellFromRow(c *Cell) {
+	r := t.rowBodyFor(c)
+	if r == nil {
+		return
+	}
+	for i, cc := range r.cells {
+		if cc == c {
+			r.cells = append(r.cells[:i], r.cells[i+1:]...)
+			return
+		}
+	}
+}
+
+func (t *Table) rowBodyFor(c *Cell) *rowBody {
+	switch c.section {
+	case sectionHeader:
+		if c.sectionRow < len(t.headers) {
+			return &t.headers[c.sectionRow].rowBody
+		}
+	case sectionFooter:
+		if c.sectionRow < len(t.footers) {
+			return &t.footers[c.sectionRow].rowBody
+		}
+	default:
+		if c.sectionRow < len(t.rows) {
+			return &t.rows[c.sectionRow].rowBody
+		}
+	}
+	return nil
+}
