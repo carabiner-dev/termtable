@@ -29,6 +29,9 @@
 //   - Right-to-left / bidirectional text is not supported.
 //   - Styling (colors, bold, alternate border styles) is reserved for a later
 //     phase; option hooks exist but have no effect yet.
-//   - Terminal width is read from the COLUMNS environment variable; it
-//     falls back to 80 when unset.
+//   - Terminal width resolves in this order: WithTargetWidth, the COLUMNS
+//     environment variable, then an 80-column default. The resolved
+//     value is clamped to the attached terminal's width when one is
+//     detected, so output never exceeds the physical screen; writing to
+//     a pipe leaves the value uncapped.
 package termtable

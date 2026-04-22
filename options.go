@@ -31,7 +31,9 @@ func WithTableID(id string) TableOption {
 
 // WithTargetWidth pins the layout target width to w terminal columns.
 // When unset, the table reads the COLUMNS environment variable, then
-// falls back to 80.
+// falls back to 80. In every case the resolved value is clamped to the
+// attached terminal's width so output never overflows the screen;
+// pipes and other non-interactive sinks leave the value uncapped.
 func WithTargetWidth(w int) TableOption {
 	return func(t *Table) {
 		t.opts.targetWidth = w

@@ -124,6 +124,104 @@ func TestResolvedTargetWidth(t *testing.T) {
 	}
 }
 
+// TestDetectTerminalWidthNonTTY verifies that the TTY probe silently
+// reports "not available" when stdout/stderr are pipes (which is the
+// shape `go test` runs with). This guarantees that in non-interactive
+// environments the resolver falls through to defaultTargetWidth rather
+// than returning a bogus 0.
+func TestDetectTerminalWidthNonTTY(t *testing.T) {
+	if _, ok := detectTerminalWidth(); ok {
+		t.Skip("stdout/stderr appear to be a real TTY; skipping non-TTY assertion")
+	}
+}
+
+// withFakeTTY swaps terminalWidthProbe for the duration of the test.
+// Pass ok=false to simulate a non-TTY environment.
+func withFakeTTY(t *testing.T, width int, ok bool) {
+	t.Helper()
+	saved := terminalWidthProbe
+	terminalWidthProbe = func() (int, bool) { return width, ok }
+	t.Cleanup(func() { terminalWidthProbe = saved })
+}
+
+// TestResolvedTargetWidthDefaultInWideTTY verifies that a table built
+// with no WithTargetWidth uses the 80-column default even when the
+// terminal is wider. The TTY is a ceiling, not a target.
+func TestResolvedTargetWidthDefaultInWideTTY(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable()
+	if got := tbl.ResolvedTargetWidth(); got != defaultTargetWidth {
+		t.Errorf("default width = %d, want %d", got, defaultTargetWidth)
+	}
+}
+
+// TestResolvedTargetWidthDefaultCappedByNarrowTTY verifies that when
+// the screen is narrower than the 80-column default, the default is
+// capped to the screen.
+func TestResolvedTargetWidthDefaultCappedByNarrowTTY(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 40, true)
+
+	tbl := NewTable()
+	if got := tbl.ResolvedTargetWidth(); got != 40 {
+		t.Errorf("default capped = %d, want 40", got)
+	}
+}
+
+// TestResolvedTargetWidthCapsExplicitToTTY verifies that an explicit
+// WithTargetWidth wider than the attached terminal is capped to the
+// terminal width.
+func TestResolvedTargetWidthCapsExplicitToTTY(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 80, true)
+
+	tbl := NewTable(WithTargetWidth(200))
+	if got := tbl.ResolvedTargetWidth(); got != 80 {
+		t.Errorf("capped width = %d, want 80 (TTY cap)", got)
+	}
+}
+
+// TestResolvedTargetWidthExplicitFitsInTTY verifies that an explicit
+// width narrower than the TTY is honoured verbatim.
+func TestResolvedTargetWidthExplicitFitsInTTY(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 120, true)
+
+	tbl := NewTable(WithTargetWidth(40))
+	if got := tbl.ResolvedTargetWidth(); got != 40 {
+		t.Errorf("narrow explicit = %d, want 40", got)
+	}
+}
+
+// TestResolvedTargetWidthCOLUMNSCappedToTTY verifies that a COLUMNS
+// value wider than the screen is also capped. COLUMNS is a preference,
+// not a licence to overflow the terminal.
+func TestResolvedTargetWidthCOLUMNSCappedToTTY(t *testing.T) {
+	t.Setenv("COLUMNS", "200")
+	withFakeTTY(t, 80, true)
+
+	tbl := NewTable()
+	if got := tbl.ResolvedTargetWidth(); got != 80 {
+		t.Errorf("COLUMNS cap = %d, want 80", got)
+	}
+}
+
+// TestResolvedTargetWidthNoTTYNoCap verifies that when no terminal is
+// attached (e.g. writing to a pipe or file) the resolver does not
+// invent a cap: explicit widths pass through verbatim even when they
+// are large.
+func TestResolvedTargetWidthNoTTYNoCap(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 0, false)
+
+	tbl := NewTable(WithTargetWidth(500))
+	if got := tbl.ResolvedTargetWidth(); got != 500 {
+		t.Errorf("non-TTY explicit = %d, want 500 (no cap applied)", got)
+	}
+}
+
 func TestColumnAutoCreation(t *testing.T) {
 	tbl := NewTable()
 	r := tbl.AddRow()

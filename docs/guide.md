@@ -256,6 +256,29 @@ Two entry points:
   any `io.Writer` and returns the layout error synchronously.
   Prefer this when you're integrating with a logger or pipe.
 
+### Target width resolution
+
+`tbl.ResolvedTargetWidth()` picks the layout budget from:
+
+1. an explicit `WithTargetWidth(n)`;
+2. else the `COLUMNS` environment variable, if it parses to a
+   positive int;
+3. else the `80`-column default.
+
+The chosen value is then **clamped to the attached terminal** when
+one is detected (stdout or stderr, via `golang.org/x/term`), so
+output never exceeds the physical screen. Pipes and other
+non-interactive sinks leave the value uncapped.
+
+| Setup                                       | Result        |
+|:--------------------------------------------|:--------------|
+| No options, 120-col terminal                | `80`          |
+| No options, 40-col terminal                 | `40` (capped) |
+| `WithTargetWidth(200)`, 80-col terminal     | `80` (capped) |
+| `WithTargetWidth(40)`, 120-col terminal     | `40`          |
+| `WithTargetWidth(500)`, writing to a pipe   | `500`         |
+| No options, piped output, no `COLUMNS`      | `80`          |
+
 Both call the same three-pass pipeline:
 
 1. **Measure** — walks every cell, consumes any `WithReader`
