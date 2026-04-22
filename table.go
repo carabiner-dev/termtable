@@ -58,12 +58,14 @@ type Table struct {
 }
 
 type tableOptions struct {
-	targetWidth    int
-	targetWidthSet bool
-	border         BorderSet
-	padding        Padding
-	emojiWidth     EmojiWidthMode
-	spanOverwrite  bool
+	targetWidth           int
+	targetWidthSet        bool
+	targetWidthPercent    int
+	targetWidthPercentSet bool
+	border                BorderSet
+	padding               Padding
+	emojiWidth            EmojiWidthMode
+	spanOverwrite         bool
 }
 
 func defaultTableOptions() tableOptions {
@@ -297,8 +299,10 @@ func (t *Table) InBounds(r, c int) bool {
 // layout. The resolution cascade, in order of preference:
 //
 //  1. explicit WithTargetWidth(n)
-//  2. the COLUMNS environment variable, when it parses to a positive int
-//  3. defaultTargetWidth (80)
+//  2. WithTargetWidthPercent(p) — computed against the terminal width
+//     when detected, else COLUMNS, else 80
+//  3. the COLUMNS environment variable, when it parses to a positive int
+//  4. defaultTargetWidth (80)
 //
 // Whatever value the cascade produces is then clamped to the attached
 // terminal's width when one is detected (stdout or stderr, via
@@ -311,6 +315,8 @@ func (t *Table) ResolvedTargetWidth() int {
 	switch {
 	case t.opts.targetWidthSet && t.opts.targetWidth > 0:
 		want = t.opts.targetWidth
+	case t.opts.targetWidthPercentSet && t.opts.targetWidthPercent > 0:
+		want = percentOfScreen(t.opts.targetWidthPercent, tty, ttyOK)
 	default:
 		if v := os.Getenv("COLUMNS"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -323,6 +329,29 @@ func (t *Table) ResolvedTargetWidth() int {
 		return tty
 	}
 	return want
+}
+
+// percentOfScreen returns p% of the screen width, using the detected
+// terminal width when available, then COLUMNS, then defaultTargetWidth
+// as the base. The result is floored and guaranteed to be at least 1 —
+// a 0-column target would crash the layout solver.
+func percentOfScreen(p, tty int, ttyOK bool) int {
+	base := defaultTargetWidth
+	switch {
+	case ttyOK && tty > 0:
+		base = tty
+	default:
+		if v := os.Getenv("COLUMNS"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				base = n
+			}
+		}
+	}
+	w := base * p / 100
+	if w < 1 {
+		return 1
+	}
+	return w
 }
 
 // terminalWidthProbe is the injection point for TTY-size detection.

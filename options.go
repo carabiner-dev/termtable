@@ -5,6 +5,7 @@ package termtable
 
 import (
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -34,10 +35,35 @@ func WithTableID(id string) TableOption {
 // falls back to 80. In every case the resolved value is clamped to the
 // attached terminal's width so output never overflows the screen;
 // pipes and other non-interactive sinks leave the value uncapped.
+//
+// Mutually exclusive with WithTargetWidthPercent — last setter wins.
 func WithTargetWidth(w int) TableOption {
 	return func(t *Table) {
 		t.opts.targetWidth = w
 		t.opts.targetWidthSet = true
+		t.opts.targetWidthPercentSet = false
+	}
+}
+
+// WithTargetWidthPercent pins the layout target width to p percent of
+// the terminal width. The percentage base is the attached terminal when
+// one is detected, else the COLUMNS environment variable, else the
+// 80-column default. Non-positive p is ignored.
+//
+// The resulting width is always clamped to the attached terminal so
+// output never overflows the screen — percentages above 100 therefore
+// behave the same as 100 on a TTY, but can produce genuinely wider
+// tables when writing to a pipe.
+//
+// Mutually exclusive with WithTargetWidth — last setter wins.
+func WithTargetWidthPercent(p int) TableOption {
+	return func(t *Table) {
+		if p <= 0 {
+			return
+		}
+		t.opts.targetWidthPercent = p
+		t.opts.targetWidthPercentSet = true
+		t.opts.targetWidthSet = false
 	}
 }
 
@@ -100,14 +126,31 @@ func WithEmojiWidth(mode EmojiWidthMode) TableOption {
 //     selects the BorderSet used for the table, equivalent to calling
 //     WithBorder with the corresponding constructor (SingleLine,
 //     DoubleLine, HeavyLine, RoundedLine, ASCIILine, NoBorder).
+//   - width: N | N% — target layout width, equivalent to
+//     WithTargetWidth / WithTargetWidthPercent. The last width
+//     declaration on the table wins.
 //
 // Unknown properties and unrecognized values are silently ignored.
 func WithTableStyle(css string) TableOption {
 	return func(t *Table) {
 		iterateCSS(css, func(prop, val string) {
-			if prop == "border-style" {
+			switch prop {
+			case "border-style":
 				if b, ok := borderSetByName(strings.ToLower(val)); ok {
 					t.opts.border = b
+				}
+				return
+			case "width":
+				if n, pct, ok := parseWidthOrPercent(val); ok {
+					if pct {
+						t.opts.targetWidthPercent = n
+						t.opts.targetWidthPercentSet = true
+						t.opts.targetWidthSet = false
+					} else {
+						t.opts.targetWidth = n
+						t.opts.targetWidthSet = true
+						t.opts.targetWidthPercentSet = false
+					}
 				}
 				return
 			}
@@ -117,6 +160,26 @@ func WithTableStyle(css string) TableOption {
 			applyDecl(t.style, prop, val)
 		})
 	}
+}
+
+// parseWidthOrPercent parses a width token: "N" returns (N, false, true)
+// for an absolute width, "N%" returns (N, true, true) for a percentage.
+// Non-positive or malformed values return ok=false.
+func parseWidthOrPercent(s string) (n int, percent, ok bool) {
+	s = strings.TrimSpace(s)
+	if strings.HasSuffix(s, "%") {
+		body := strings.TrimSpace(strings.TrimSuffix(s, "%"))
+		v, err := strconv.Atoi(body)
+		if err != nil || v < 1 {
+			return 0, false, false
+		}
+		return v, true, true
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 1 {
+		return 0, false, false
+	}
+	return v, false, true
 }
 
 // ---------------------------------------------------------------------

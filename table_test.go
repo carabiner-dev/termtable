@@ -248,6 +248,129 @@ func TestRenderNeverExceedsTTYWidth(t *testing.T) {
 	}
 }
 
+// TestResolvedTargetWidthPercentOfTTY verifies that a percentage is
+// computed against the detected terminal width.
+func TestResolvedTargetWidthPercentOfTTY(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 100, true)
+
+	tbl := NewTable(WithTargetWidthPercent(50))
+	if got := tbl.ResolvedTargetWidth(); got != 50 {
+		t.Errorf("50%% of 100-col TTY = %d, want 50", got)
+	}
+}
+
+// TestResolvedTargetWidthPercentClampedToTTY verifies that a percent
+// above 100 is capped by the terminal — the same hard ceiling as for
+// absolute widths.
+func TestResolvedTargetWidthPercentClampedToTTY(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 80, true)
+
+	tbl := NewTable(WithTargetWidthPercent(150))
+	if got := tbl.ResolvedTargetWidth(); got != 80 {
+		t.Errorf("150%% capped to 80-col TTY = %d, want 80", got)
+	}
+}
+
+// TestResolvedTargetWidthPercentFallsBackToCOLUMNS verifies that in a
+// non-TTY sink, the percentage base is the COLUMNS env var.
+func TestResolvedTargetWidthPercentFallsBackToCOLUMNS(t *testing.T) {
+	t.Setenv("COLUMNS", "120")
+	withFakeTTY(t, 0, false)
+
+	tbl := NewTable(WithTargetWidthPercent(50))
+	if got := tbl.ResolvedTargetWidth(); got != 60 {
+		t.Errorf("50%% of COLUMNS=120 = %d, want 60", got)
+	}
+}
+
+// TestResolvedTargetWidthPercentFallsBackToDefault verifies the
+// no-TTY-no-COLUMNS path uses the 80-column default as the base.
+func TestResolvedTargetWidthPercentFallsBackToDefault(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 0, false)
+
+	tbl := NewTable(WithTargetWidthPercent(50))
+	if got := tbl.ResolvedTargetWidth(); got != 40 {
+		t.Errorf("50%% of default 80 = %d, want 40", got)
+	}
+}
+
+// TestTableStyleCSSWidthAbsolute verifies `width: N` in WithTableStyle
+// drives the absolute target width, matching WithTargetWidth(N).
+func TestTableStyleCSSWidthAbsolute(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 0, false)
+
+	tbl := NewTable(WithTableStyle("width: 42"))
+	if got := tbl.ResolvedTargetWidth(); got != 42 {
+		t.Errorf("CSS width:42 = %d, want 42", got)
+	}
+}
+
+// TestTableStyleCSSWidthPercent verifies `width: P%` in WithTableStyle
+// drives the percent target, matching WithTargetWidthPercent(P).
+func TestTableStyleCSSWidthPercent(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 100, true)
+
+	tbl := NewTable(WithTableStyle("width: 80%"))
+	if got := tbl.ResolvedTargetWidth(); got != 80 {
+		t.Errorf("CSS width:80%% of 100 = %d, want 80", got)
+	}
+}
+
+// TestTableStyleCSSWidthOverridesPreceding verifies the last width
+// token in a CSS block wins — and crosses the absolute/percent
+// boundary correctly.
+func TestTableStyleCSSWidthOverridesPreceding(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	// percent then absolute: absolute wins
+	tbl := NewTable(WithTableStyle("width: 50%; width: 30"))
+	if got := tbl.ResolvedTargetWidth(); got != 30 {
+		t.Errorf("last=absolute: got %d, want 30", got)
+	}
+	// absolute then percent: percent wins
+	tbl2 := NewTable(WithTableStyle("width: 30; width: 50%"))
+	if got := tbl2.ResolvedTargetWidth(); got != 100 {
+		t.Errorf("last=percent: got %d, want 100", got)
+	}
+}
+
+// TestTableStyleCSSWidthIgnoresGarbage verifies a malformed width
+// token doesn't clobber a valid preceding value (or trip the parser).
+func TestTableStyleCSSWidthIgnoresGarbage(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 0, false)
+
+	tbl := NewTable(WithTableStyle("width: 40; width: abc; width: -5; width: 0%"))
+	if got := tbl.ResolvedTargetWidth(); got != 40 {
+		t.Errorf("garbage-ignored width = %d, want 40", got)
+	}
+}
+
+// TestResolvedTargetWidthPercentAndAbsoluteMutex verifies the two
+// width options are mutually exclusive: whichever is applied last wins.
+func TestResolvedTargetWidthPercentAndAbsoluteMutex(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 100, true)
+
+	// Absolute set first, then percent — percent wins.
+	tbl := NewTable(WithTargetWidth(30), WithTargetWidthPercent(25))
+	if got := tbl.ResolvedTargetWidth(); got != 25 {
+		t.Errorf("last=percent: got %d, want 25", got)
+	}
+
+	// Percent set first, then absolute — absolute wins.
+	tbl2 := NewTable(WithTargetWidthPercent(25), WithTargetWidth(30))
+	if got := tbl2.ResolvedTargetWidth(); got != 30 {
+		t.Errorf("last=absolute: got %d, want 30", got)
+	}
+}
+
 // TestRenderNoClipToPipe verifies that non-interactive sinks (pipes,
 // files) are not clipped — the user said those are free to overflow.
 func TestRenderNoClipToPipe(t *testing.T) {
