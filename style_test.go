@@ -196,11 +196,10 @@ func TestStyleApplyBorderOnlyUsesBorderAttrs(t *testing.T) {
 
 func TestRenderAppliesCellStyle(t *testing.T) {
 	forceColor(t)
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(20))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("PASS"),
-		WithTextColor("green"), WithBold()))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("PASS"),
+		WithTextColor("green"), WithBold())
 
 	out := tbl.String()
 	if !strings.Contains(out, "\x1b[32") && !strings.Contains(out, "\x1b[1;32") &&
@@ -220,14 +219,13 @@ func TestRenderAppliesCellStyle(t *testing.T) {
 
 func TestRenderAppliesTableBorderColor(t *testing.T) {
 	forceColor(t)
-	h := th{t}
 	tbl := NewTable(
 		WithTargetWidth(20),
 		WithTableStyle("border-color: cyan"),
 	)
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("x")))
-	h.cell(r.AddCell(WithContent("y")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("x"))
+	r.AddCell(WithContent("y"))
 
 	out := tbl.String()
 	if !strings.Contains(out, "\x1b[36m") {
@@ -237,11 +235,10 @@ func TestRenderAppliesTableBorderColor(t *testing.T) {
 
 func TestRenderRowStyleCascadesToCells(t *testing.T) {
 	forceColor(t)
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(20))
-	hdr := h.header(tbl.AddHeader(WithRowStyle("font-weight: bold")))
-	h.cell(hdr.AddCell(WithContent("hdr1")))
-	h.cell(hdr.AddCell(WithContent("hdr2")))
+	hdr := tbl.AddHeader(WithRowStyle("font-weight: bold"))
+	hdr.AddCell(WithContent("hdr1"))
+	hdr.AddCell(WithContent("hdr2"))
 
 	out := tbl.String()
 	// SGR code for bold is 1. Look for "1m" in an escape following
@@ -256,15 +253,14 @@ func TestRenderNoColorYieldsPlainOutput(t *testing.T) {
 	color.NoColor = true
 	defer func() { color.NoColor = saved }()
 
-	h := th{t}
 	tbl := NewTable(
 		WithTargetWidth(20),
 		WithTableStyle("border-color: cyan"),
 	)
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("x"),
+	r := tbl.AddRow()
+	r.AddCell(WithContent("x"),
 		WithTextColor("red"), WithBold(),
-		WithBackgroundColor("blue")))
+		WithBackgroundColor("blue"))
 
 	out := tbl.String()
 	if strings.Contains(out, "\x1b[") {
@@ -274,11 +270,10 @@ func TestRenderNoColorYieldsPlainOutput(t *testing.T) {
 
 func TestCellStyleOverridesRowStyle(t *testing.T) {
 	forceColor(t)
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(20))
-	hdr := h.header(tbl.AddHeader(WithRowStyle("color: blue")))
-	h.cell(hdr.AddCell(WithContent("a"))) // inherits blue
-	h.cell(hdr.AddCell(WithContent("b"), WithTextColor("red")))
+	hdr := tbl.AddHeader(WithRowStyle("color: blue"))
+	hdr.AddCell(WithContent("a")) // inherits blue
+	hdr.AddCell(WithContent("b"), WithTextColor("red"))
 
 	out := tbl.String()
 	// Both codes must be present somewhere.

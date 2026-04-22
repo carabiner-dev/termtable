@@ -15,12 +15,11 @@ func layoutOverheadCols(nCols int) int {
 }
 
 func TestLayoutEqualSplitBaseline(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(37))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
 
 	m := Measure(tbl)
 	l := Layout(tbl, m)
@@ -37,13 +36,12 @@ func TestLayoutEqualSplitBaseline(t *testing.T) {
 }
 
 func TestLayoutExtraRemainderDistributedLeftFirst(t *testing.T) {
-	h := th{t}
 	// Force a remainder: available not divisible by 3.
 	tbl := NewTable(WithTargetWidth(39))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
 
 	l := Layout(tbl, Measure(tbl))
 	// overhead=10, avail=29, base=9 remainder 2 → [10,10,9]
@@ -56,12 +54,11 @@ func TestLayoutExtraRemainderDistributedLeftFirst(t *testing.T) {
 }
 
 func TestLayoutMinFloorTriggered(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("x")))
-	h.cell(r.AddCell(WithContent("looooongword"))) // min = 12
-	h.cell(r.AddCell(WithContent("y")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("x"))
+	r.AddCell(WithContent("looooongword")) // min = 12
+	r.AddCell(WithContent("y"))
 
 	l := Layout(tbl, Measure(tbl))
 	if l.err != nil {
@@ -85,11 +82,10 @@ func TestLayoutMinFloorTriggered(t *testing.T) {
 }
 
 func TestLayoutTooNarrowErrors(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(12))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("longwordone")))
-	h.cell(r.AddCell(WithContent("longwordtwo")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("longwordone"))
+	r.AddCell(WithContent("longwordtwo"))
 
 	l := Layout(tbl, Measure(tbl))
 	if !errors.Is(l.err, ErrTargetTooNarrow) {
@@ -98,17 +94,16 @@ func TestLayoutTooNarrowErrors(t *testing.T) {
 }
 
 func TestLayoutMultiSpanConstraintBorrows(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	// Row 0: a single cell spanning 2 columns with a long minimum.
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("averylongbannerword"), WithColSpan(2)))
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("averylongbannerword"), WithColSpan(2))
 	// Row 1: two normal cells to populate the columns.
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("x")))
-	h.cell(r1.AddCell(WithContent("y")))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("x"))
+	r1.AddCell(WithContent("y"))
 	// Force a third column so there's outside-span slack to borrow.
-	h.cell(r1.AddCell(WithContent("z"))) // col 2
+	r1.AddCell(WithContent("z")) // col 2
 
 	// Row 0 only has the banner, so column 2 gets populated by row 1.
 	// Actually the banner is in row 0 and the banner cell occupies cols
@@ -131,13 +126,12 @@ func TestLayoutMultiSpanConstraintBorrows(t *testing.T) {
 }
 
 func TestLayoutDesiredUpgrade(t *testing.T) {
-	h := th{t}
 	// Short content: base widths exceed desired easily; leftover
 	// budget should NOT inflate columns past their desired.
 	tbl := NewTable(WithTargetWidth(60))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
 
 	l := Layout(tbl, Measure(tbl))
 	if l.err != nil {
@@ -157,11 +151,10 @@ func TestLayoutDesiredUpgrade(t *testing.T) {
 }
 
 func TestLayoutRowHeightsSingleLineContent(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(50))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("one")))
-	h.cell(r.AddCell(WithContent("two")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("one"))
+	r.AddCell(WithContent("two"))
 
 	l := Layout(tbl, Measure(tbl))
 	if len(l.rowHeights) != 1 {
@@ -173,11 +166,10 @@ func TestLayoutRowHeightsSingleLineContent(t *testing.T) {
 }
 
 func TestLayoutRowHeightsWrapsToMultiLine(t *testing.T) {
-	h := th{t}
 	// Narrow column forces wrapping.
 	tbl := NewTable(WithTargetWidth(20))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a very long sentence that must wrap several times")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a very long sentence that must wrap several times"))
 
 	l := Layout(tbl, Measure(tbl))
 	if len(l.rowHeights) != 1 {
@@ -189,17 +181,16 @@ func TestLayoutRowHeightsWrapsToMultiLine(t *testing.T) {
 }
 
 func TestLayoutRowSpanBumpsTailRow(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(25))
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(
+	r0 := tbl.AddRow()
+	r0.AddCell(
 		WithContent("first\nsecond\nthird\nfourth"),
 		WithRowSpan(3),
-	))
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("x")))
-	r2 := h.row(tbl.AddRow())
-	h.cell(r2.AddCell(WithContent("y")))
+	)
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("x"))
+	r2 := tbl.AddRow()
+	r2.AddCell(WithContent("y"))
 
 	l := Layout(tbl, Measure(tbl))
 	if len(l.rowHeights) != 3 {

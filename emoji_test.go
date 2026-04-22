@@ -149,13 +149,11 @@ func TestDetectModernEmojiTerminalWhitelist(t *testing.T) {
 }
 
 func TestEmojiModeAffectsLayout(t *testing.T) {
-	h := th{t}
-
 	buildZWJ := func(mode EmojiWidthMode) string {
 		tbl := NewTable(WithTargetWidth(30), WithEmojiWidth(mode))
-		r := h.row(tbl.AddRow())
-		h.cell(r.AddCell(WithContent("name")))
-		h.cell(r.AddCell(WithContent("👨‍👩‍👧")))
+		r := tbl.AddRow()
+		r.AddCell(WithContent("name"))
+		r.AddCell(WithContent("👨‍👩‍👧"))
 		return tbl.String()
 	}
 

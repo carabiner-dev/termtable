@@ -11,7 +11,7 @@ the auto-detection upgrades to tight Unicode widths.
 ```go
 t := termtable.NewTable(termtable.WithTargetWidth(40))
 
-h, _ := t.AddHeader()
+h := t.AddHeader()
 h.AddCell(termtable.WithContent("Kind"))
 h.AddCell(termtable.WithContent("Glyph"))
 
@@ -21,7 +21,7 @@ for _, row := range [][]string{
     {"tone", "👋🏽"},
     {"plain", "🔥"},
 } {
-    r, _ := t.AddRow()
+    r := t.AddRow()
     r.AddCell(termtable.WithContent(row[0]))
     r.AddCell(termtable.WithContent(row[1]))
 }

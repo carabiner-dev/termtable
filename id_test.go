@@ -4,48 +4,64 @@
 package termtable
 
 import (
-	"errors"
 	"testing"
 )
 
 func TestEmptyIDNotRegistered(t *testing.T) {
 	reg := newIDRegistry()
 	c := NewCell()
-	if err := reg.register("", c); err != nil {
-		t.Fatalf("register empty: %v", err)
+	if ok := reg.register("", c); !ok {
+		t.Fatalf("register empty returned false")
 	}
 	if reg.lookup("") != nil {
 		t.Error("empty id should never resolve")
 	}
 }
 
-func TestDuplicateIDRejected(t *testing.T) {
-	h := th{t}
+func TestDuplicateIDWarnsAndClears(t *testing.T) {
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithCellID("dup"), WithContent("a")))
+	r := tbl.AddRow()
+	first := r.AddCell(WithCellID("dup"), WithContent("a"))
+	second := r.AddCell(WithCellID("dup"), WithContent("b"))
 
-	_, err := r.AddCell(WithCellID("dup"), WithContent("b"))
-	if !errors.Is(err, ErrDuplicateID) {
-		t.Fatalf("second add err = %v, want ErrDuplicateID", err)
+	// Both cells are attached; the duplicate has its ID cleared.
+	if got := len(r.Cells()); got != 2 {
+		t.Errorf("cells after duplicate = %d, want 2", got)
 	}
-	if got := len(r.Cells()); got != 1 {
-		t.Errorf("cells after conflict = %d, want 1", got)
+	if first.ID() != "dup" {
+		t.Errorf("first cell ID = %q, want %q", first.ID(), "dup")
+	}
+	if second.ID() != "" {
+		t.Errorf("second cell ID = %q, want cleared", second.ID())
+	}
+	// The original cell remains resolvable by the ID.
+	if tbl.GetElementByID("dup") != first {
+		t.Errorf("GetElementByID(dup) should resolve to first cell")
+	}
+	// A DuplicateIDEvent must be recorded.
+	var saw bool
+	for _, w := range tbl.Warnings() {
+		ev, ok := w.(DuplicateIDEvent)
+		if ok && ev.ID == "dup" && ev.Kind == "cell" {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Errorf("expected DuplicateIDEvent, got warnings=%v", tbl.Warnings())
 	}
 }
 
 func TestGetElementByIDTypes(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTableID("tbl"))
 
-	hd := h.header(tbl.AddHeader(WithRowID("h")))
-	hc := h.cell(hd.AddCell(WithCellID("hc"), WithContent("head")))
+	hd := tbl.AddHeader(WithRowID("h"))
+	hc := hd.AddCell(WithCellID("hc"), WithContent("head"))
 
-	r := h.row(tbl.AddRow(WithRowID("r")))
-	rc := h.cell(r.AddCell(WithCellID("rc"), WithContent("body")))
+	r := tbl.AddRow(WithRowID("r"))
+	rc := r.AddCell(WithCellID("rc"), WithContent("body"))
 
-	f := h.footer(tbl.AddFooter(WithRowID("f")))
-	fc := h.cell(f.AddCell(WithCellID("fc"), WithContent("foot")))
+	f := tbl.AddFooter(WithRowID("f"))
+	fc := f.AddCell(WithCellID("fc"), WithContent("foot"))
 
 	cases := []struct {
 		id   string
@@ -71,10 +87,9 @@ func TestGetElementByIDTypes(t *testing.T) {
 }
 
 func TestGetElementByIDTypeSwitch(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow(WithRowID("r1")))
-	c := h.cell(r.AddCell(WithCellID("c1"), WithContent("x")))
+	r := tbl.AddRow(WithRowID("r1"))
+	c := r.AddCell(WithCellID("c1"), WithContent("x"))
 
 	switch e := tbl.GetElementByID("r1").(type) {
 	case *Row:

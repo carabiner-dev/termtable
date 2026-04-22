@@ -6,23 +6,23 @@ single-line truncation, and line-clamp at 2.
 ```go
 t := termtable.NewTable(termtable.WithTargetWidth(40))
 
-h, _ := t.AddHeader()
+h := t.AddHeader()
 h.AddCell(termtable.WithContent("Name"))
 h.AddCell(termtable.WithContent("Description"))
 
-r1, _ := t.AddRow()
+r1 := t.AddRow()
 r1.AddCell(termtable.WithContent("multi"))
 r1.AddCell(termtable.WithContent(
     "this is a long description that wraps across several lines"))
 
-r2, _ := t.AddRow()
+r2 := t.AddRow()
 r2.AddCell(termtable.WithContent("single"))
 r2.AddCell(
     termtable.WithContent("this is a long description that wraps across several lines"),
     termtable.WithSingleLine(),
 )
 
-r3, _ := t.AddRow()
+r3 := t.AddRow()
 r3.AddCell(termtable.WithContent("clamp"))
 r3.AddCell(
     termtable.WithContent("this is a long description that wraps across several lines"),

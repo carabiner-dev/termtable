@@ -45,11 +45,18 @@ func WithBorder(b BorderSet) TableOption {
 	return func(t *Table) { t.opts.border = b }
 }
 
-// WithSpanOverwrite controls span-conflict behavior. When false (the
-// default), a colliding cell span returns ErrSpanConflict. When true,
-// later cells overwrite earlier spans: fully-covered cells are dropped
-// and partially overlapped cells are truncated, with events recorded
-// in Table.Warnings.
+// WithSpanOverwrite controls span-conflict behavior. The default
+// (true) lets later cells overwrite earlier spans: fully-covered
+// cells are dropped and partially overlapped cells are truncated,
+// with an OverwriteEvent recorded on Table.Warnings for each. This
+// means AddCell and AttachCell never fail for layout reasons under
+// default settings — conflicts are absorbed.
+//
+// Passing false switches to strict mode: a colliding span is an
+// author error. AddCell / AttachCell panic with a wrapped
+// ErrSpanConflict, and the new cell is not placed. Callers who
+// want explicit error handling instead of panics can use the
+// AddCellWithError / AttachCellWithError methods on the row.
 func WithSpanOverwrite(enable bool) TableOption {
 	return func(t *Table) { t.opts.spanOverwrite = enable }
 }
@@ -150,33 +157,65 @@ func WithCellID(id string) CellOption {
 }
 
 // WithContent sets the cell's textual content. Honors "\n" as a hard
-// line break; combines with automatic wrapping when the cell is wider
-// than its assigned column width.
+// line break; combines with automatic wrapping when the cell is
+// wider than its assigned column width. If a reader source was
+// previously set on the cell via WithReader, it is discarded (a
+// ContentSourceReplacedEvent warning is emitted when the cell is
+// attached to a row).
 func WithContent(s string) CellOption {
 	return func(c *Cell) {
+		if c.reader != nil {
+			c.reader = nil
+			c.resolved = false
+			c.resolveErr = nil
+			c.contentSourceSwapped = true
+		}
 		c.content = s
 		c.hasContent = true
 	}
 }
 
-// WithReader sets the cell's content source to an io.Reader consumed
-// lazily on the first render pass. Cannot be combined with WithContent
-// (ErrContentAndReader).
+// WithReader sets the cell's content source to an io.Reader
+// consumed lazily on the first render pass. If a string source was
+// previously set on the cell via WithContent, it is discarded (a
+// ContentSourceReplacedEvent warning is emitted when the cell is
+// attached to a row).
 func WithReader(r io.Reader) CellOption {
-	return func(c *Cell) { c.reader = r }
+	return func(c *Cell) {
+		if c.hasContent {
+			c.content = ""
+			c.hasContent = false
+			c.contentSourceSwapped = true
+		}
+		c.reader = r
+		c.resolved = false
+		c.resolveErr = nil
+	}
 }
 
-// WithColSpan sets the number of columns the cell occupies. Must be
-// >= 1 (ErrInvalidSpan).
+// WithColSpan sets the number of columns the cell occupies. Values
+// of n <= 0 clamp to 1 (the default) so the option never produces
+// an invalid span.
 func WithColSpan(n int) CellOption {
-	return func(c *Cell) { c.colSpan = n }
+	return func(c *Cell) {
+		if n < 1 {
+			n = 1
+		}
+		c.colSpan = n
+	}
 }
 
 // WithRowSpan sets the number of rows the cell occupies within its
-// section. Must be >= 1 (ErrInvalidSpan). Rowspans cannot cross
-// section boundaries.
+// section. Values of n <= 0 clamp to 1 (the default). Rowspans that
+// would extend past the last row of the section are clamped by the
+// renderer and a CrossSectionSpanEvent is emitted.
 func WithRowSpan(n int) CellOption {
-	return func(c *Cell) { c.rowSpan = n }
+	return func(c *Cell) {
+		if n < 1 {
+			n = 1
+		}
+		c.rowSpan = n
+	}
 }
 
 // WithAlign sets the cell's horizontal alignment. Default is AlignLeft.

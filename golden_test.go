@@ -39,30 +39,29 @@ func assertGolden(t *testing.T, name, got string) {
 // banner (the colspan suppresses them) and the separator between the
 // two header rows introducing ┬ where column boundaries start.
 func TestGoldenMultiHeaderColspan(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 
-	banner := h.header(tbl.AddHeader())
-	h.cell(banner.AddCell(
+	banner := tbl.AddHeader()
+	banner.AddCell(
 		WithContent("Evaluation Results"),
 		WithColSpan(3),
 		WithAlign(AlignCenter),
-	))
+	)
 
-	cols := h.header(tbl.AddHeader())
-	h.cell(cols.AddCell(WithContent("Check")))
-	h.cell(cols.AddCell(WithContent("Status")))
-	h.cell(cols.AddCell(WithContent("Message")))
+	cols := tbl.AddHeader()
+	cols.AddCell(WithContent("Check"))
+	cols.AddCell(WithContent("Status"))
+	cols.AddCell(WithContent("Message"))
 
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("OSPS-BR-05")))
-	h.cell(r1.AddCell(WithContent("PASS"), WithAlign(AlignCenter)))
-	h.cell(r1.AddCell(WithContent("all good")))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("OSPS-BR-05"))
+	r1.AddCell(WithContent("PASS"), WithAlign(AlignCenter))
+	r1.AddCell(WithContent("all good"))
 
-	r2 := h.row(tbl.AddRow())
-	h.cell(r2.AddCell(WithContent("OSPS-DO-02")))
-	h.cell(r2.AddCell(WithContent("FAIL"), WithAlign(AlignCenter)))
-	h.cell(r2.AddCell(WithContent("review deps")))
+	r2 := tbl.AddRow()
+	r2.AddCell(WithContent("OSPS-DO-02"))
+	r2.AddCell(WithContent("FAIL"), WithAlign(AlignCenter))
+	r2.AddCell(WithContent("review deps"))
 
 	assertGolden(t, "multi_header_colspan.golden", tbl.String())
 }
@@ -73,20 +72,19 @@ func TestGoldenMultiHeaderColspan(t *testing.T) {
 // surrounding grid correctly with a ┤ on row 0/1 separator and a ┼
 // on the separator below.
 func TestGoldenSpanNested(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("big\nspan"), WithRowSpan(2), WithColSpan(2)))
-	h.cell(r0.AddCell(WithContent("alpha")))
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("big\nspan"), WithRowSpan(2), WithColSpan(2))
+	r0.AddCell(WithContent("alpha"))
 
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("beta")))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("beta"))
 
-	r2 := h.row(tbl.AddRow())
-	h.cell(r2.AddCell(WithContent("gamma")))
-	h.cell(r2.AddCell(WithContent("delta")))
-	h.cell(r2.AddCell(WithContent("omega")))
+	r2 := tbl.AddRow()
+	r2.AddCell(WithContent("gamma"))
+	r2.AddCell(WithContent("delta"))
+	r2.AddCell(WithContent("omega"))
 
 	assertGolden(t, "span_nested.golden", tbl.String())
 }
@@ -98,26 +96,25 @@ func TestGoldenSpanNested(t *testing.T) {
 // visually aligned on every terminal, including ones without ZWJ
 // ligature support.
 func TestGoldenUnicodeMix(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(
 		WithTargetWidth(40),
 		WithEmojiWidth(EmojiWidthConservative),
 	)
 
-	hdr := h.header(tbl.AddHeader())
-	h.cell(hdr.AddCell(WithContent("Name")))
-	h.cell(hdr.AddCell(WithContent("CJK")))
-	h.cell(hdr.AddCell(WithContent("Emoji")))
+	hdr := tbl.AddHeader()
+	hdr.AddCell(WithContent("Name"))
+	hdr.AddCell(WithContent("CJK"))
+	hdr.AddCell(WithContent("Emoji"))
 
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("ascii")))
-	h.cell(r1.AddCell(WithContent("中文测试"))) //nolint:gosmopolitan // CJK render test
-	h.cell(r1.AddCell(WithContent("🔥🚀")))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("ascii"))
+	r1.AddCell(WithContent("中文测试")) //nolint:gosmopolitan // CJK render test
+	r1.AddCell(WithContent("🔥🚀"))
 
-	r2 := h.row(tbl.AddRow())
-	h.cell(r2.AddCell(WithContent("more")))
-	h.cell(r2.AddCell(WithContent("こんにちは")))
-	h.cell(r2.AddCell(WithContent("👨‍👩‍👧")))
+	r2 := tbl.AddRow()
+	r2.AddCell(WithContent("more"))
+	r2.AddCell(WithContent("こんにちは"))
+	r2.AddCell(WithContent("👨‍👩‍👧"))
 
 	assertGolden(t, "unicode_mix.golden", tbl.String())
 }

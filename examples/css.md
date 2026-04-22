@@ -15,14 +15,14 @@ t.Column(0).Style("min-width: 12")
 t.Column(1).Style("width: 8; text-align: center")
 t.Column(2).Style("flex: 3")
 
-hdr, _ := t.AddHeader(termtable.WithRowStyle(
+hdr := t.AddHeader(termtable.WithRowStyle(
     "color: white; background: blue; font-weight: bold",
 ))
 hdr.AddCell(termtable.WithContent("Check"))
 hdr.AddCell(termtable.WithContent("Status"))
 hdr.AddCell(termtable.WithContent("Message"))
 
-r, _ := t.AddRow()
+r := t.AddRow()
 r.AddCell(termtable.WithContent("OSPS-BR-05"))
 r.AddCell(
     termtable.WithContent("PASS"),

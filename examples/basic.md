@@ -14,15 +14,15 @@ import (
 func main() {
 	t := termtable.NewTable(termtable.WithTargetWidth(30))
 
-	h, _ := t.AddHeader()
+	h := t.AddHeader()
 	h.AddCell(termtable.WithContent("Name"))
 	h.AddCell(termtable.WithContent("Count"))
 
-	r1, _ := t.AddRow()
+	r1 := t.AddRow()
 	r1.AddCell(termtable.WithContent("alpha"))
 	r1.AddCell(termtable.WithContent("1"))
 
-	r2, _ := t.AddRow()
+	r2 := t.AddRow()
 	r2.AddCell(termtable.WithContent("beta"))
 	r2.AddCell(termtable.WithContent("2"))
 

@@ -8,29 +8,29 @@ section.
 ```go
 t := termtable.NewTable(termtable.WithTargetWidth(40))
 
-banner, _ := t.AddHeader()
+banner := t.AddHeader()
 banner.AddCell(
     termtable.WithContent("Evaluation Results"),
     termtable.WithColSpan(3),
     termtable.WithAlign(termtable.AlignCenter),
 )
 
-cols, _ := t.AddHeader()
+cols := t.AddHeader()
 cols.AddCell(termtable.WithContent("Check"))
 cols.AddCell(termtable.WithContent("Status"))
 cols.AddCell(termtable.WithContent("Message"))
 
-r1, _ := t.AddRow()
+r1 := t.AddRow()
 r1.AddCell(termtable.WithContent("OSPS-BR-05"))
 r1.AddCell(termtable.WithContent("PASS"), termtable.WithAlign(termtable.AlignCenter))
 r1.AddCell(termtable.WithContent("all good"))
 
-r2, _ := t.AddRow()
+r2 := t.AddRow()
 r2.AddCell(termtable.WithContent("OSPS-DO-02"))
 r2.AddCell(termtable.WithContent("FAIL"), termtable.WithAlign(termtable.AlignCenter))
 r2.AddCell(termtable.WithContent("review deps"))
 
-f, _ := t.AddFooter()
+f := t.AddFooter()
 f.AddCell(
     termtable.WithContent("1 passed, 1 failed"),
     termtable.WithColSpan(3),

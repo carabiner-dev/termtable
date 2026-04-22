@@ -12,14 +12,13 @@ import (
 // that is too wide for the column, so trimming must kick in.
 func urlTable(t *testing.T, opts ...CellOption) string {
 	t.Helper()
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(25))
 	tbl.Column(0).Style("white-space: nowrap")
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(append(
+	r := tbl.AddRow()
+	r.AddCell(append(
 		[]CellOption{WithContent("https://example.com/page.html")},
 		opts...,
-	)...))
+	)...)
 	return tbl.String()
 }
 
@@ -125,11 +124,10 @@ func TestTrimPositionCSSSynonyms(t *testing.T) {
 }
 
 func TestTrimPositionCascadesFromColumn(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(25))
 	tbl.Column(0).Style("white-space: nowrap; text-overflow-position: start")
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("https://example.com/page.html")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("https://example.com/page.html"))
 
 	out := tbl.String()
 	content := firstContentLine(out)
@@ -151,14 +149,13 @@ func TestLineClampEllipsisAlwaysAtEnd(t *testing.T) {
 	// by placing the ellipsis at the end of the final kept line,
 	// regardless of text-overflow-position. The trim position only
 	// matters for horizontal clipping.
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(25))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(
+	r := tbl.AddRow()
+	r.AddCell(
 		WithContent("one two three four five six seven eight"),
 		WithMaxLines(1),
 		WithTrimPosition(TrimStart),
-	))
+	)
 
 	out := tbl.String()
 	content := firstContentLine(out)
@@ -187,10 +184,9 @@ func TestTrimPositionClipNoEllipsis(t *testing.T) {
 }
 
 func TestTrimPositionIrrelevantWhenFits(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("short"), WithSingleLine(), WithTrimPosition(TrimMiddle)))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("short"), WithSingleLine(), WithTrimPosition(TrimMiddle))
 
 	out := tbl.String()
 	if strings.Contains(out, "…") {

@@ -13,11 +13,10 @@ import (
 // height 3 and col 0 has two blank lines to distribute.
 func shortLongTable(t *testing.T, opts ...CellOption) string {
 	t.Helper()
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(append([]CellOption{WithContent("short")}, opts...)...))
-	h.cell(r.AddCell(WithContent("this is a much longer message that must wrap")))
+	r := tbl.AddRow()
+	r.AddCell(append([]CellOption{WithContent("short")}, opts...)...)
+	r.AddCell(WithContent("this is a much longer message that must wrap"))
 	return tbl.String()
 }
 
@@ -68,14 +67,13 @@ func TestVAlignBottom(t *testing.T) {
 }
 
 func TestVAlignCSSEquivalent(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(
+	r := tbl.AddRow()
+	r.AddCell(
 		WithContent("short"),
 		WithCellStyle("vertical-align: bottom"),
-	))
-	h.cell(r.AddCell(WithContent("this is a much longer message that must wrap")))
+	)
+	r.AddCell(WithContent("this is a much longer message that must wrap"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -85,13 +83,12 @@ func TestVAlignCSSEquivalent(t *testing.T) {
 }
 
 func TestColumnVAlignCascadesToCells(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	tbl.Column(0).SetVAlign(VAlignMiddle)
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("short"))) // inherits column
-	h.cell(r.AddCell(WithContent("this is a much longer message that must wrap")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("short")) // inherits column
+	r.AddCell(WithContent("this is a much longer message that must wrap"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -101,13 +98,12 @@ func TestColumnVAlignCascadesToCells(t *testing.T) {
 }
 
 func TestCellVAlignOverridesColumn(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	tbl.Column(0).SetVAlign(VAlignMiddle)
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("short"), WithVAlign(VAlignBottom)))
-	h.cell(r.AddCell(WithContent("this is a much longer message that must wrap")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("short"), WithVAlign(VAlignBottom))
+	r.AddCell(WithContent("this is a much longer message that must wrap"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -119,11 +115,10 @@ func TestCellVAlignOverridesColumn(t *testing.T) {
 func TestVAlignNoEffectWhenContentFillsRow(t *testing.T) {
 	// Row height equals content height → no offset possible, valign
 	// should be a no-op.
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a"), WithVAlign(VAlignBottom)))
-	h.cell(r.AddCell(WithContent("b")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"), WithVAlign(VAlignBottom))
+	r.AddCell(WithContent("b"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")

@@ -4,7 +4,6 @@
 package termtable
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -68,38 +67,84 @@ func TestCellOptionsApply(t *testing.T) {
 	}
 }
 
-func TestContentAndReaderMutex(t *testing.T) {
-	h := th{t}
+func TestContentAndReaderLastWriterWins(t *testing.T) {
+	// Reader applied after content: reader wins.
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	_, err := r.AddCell(
+	r := tbl.AddRow()
+	c := r.AddCell(
+		WithCellID("rc"),
 		WithContent("hi"),
-		WithReader(strings.NewReader("also hi")),
+		WithReader(strings.NewReader("from reader")),
 	)
-	if !errors.Is(err, ErrContentAndReader) {
-		t.Fatalf("err = %v, want ErrContentAndReader", err)
+	if c.reader == nil {
+		t.Errorf("reader should win when applied after content")
+	}
+	if c.hasContent {
+		t.Errorf("content flag should be cleared when reader wins")
+	}
+	// Warning is recorded for the swap.
+	var sawReader bool
+	for _, w := range tbl.Warnings() {
+		ev, ok := w.(ContentSourceReplacedEvent)
+		if ok && ev.CellID == "rc" {
+			sawReader = true
+		}
+	}
+	if !sawReader {
+		t.Errorf("expected ContentSourceReplacedEvent for reader-wins, warnings=%v", tbl.Warnings())
+	}
+
+	// Content applied after reader: content wins.
+	tbl2 := NewTable()
+	r2 := tbl2.AddRow()
+	c2 := r2.AddCell(
+		WithCellID("cc"),
+		WithReader(strings.NewReader("from reader")),
+		WithContent("hi"),
+	)
+	if c2.reader != nil {
+		t.Errorf("content should win when applied after reader")
+	}
+	if !c2.hasContent || c2.Content() != "hi" {
+		t.Errorf("content should be set to %q, got %q", "hi", c2.Content())
+	}
+	var sawContent bool
+	for _, w := range tbl2.Warnings() {
+		ev, ok := w.(ContentSourceReplacedEvent)
+		if ok && ev.CellID == "cc" {
+			sawContent = true
+		}
+	}
+	if !sawContent {
+		t.Errorf("expected ContentSourceReplacedEvent for content-wins, warnings=%v", tbl2.Warnings())
 	}
 }
 
-func TestInvalidSpan(t *testing.T) {
-	h := th{t}
-	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	if _, err := r.AddCell(WithColSpan(0)); !errors.Is(err, ErrInvalidSpan) {
-		t.Errorf("colSpan=0: err = %v, want ErrInvalidSpan", err)
+func TestSpanClampsBelowOne(t *testing.T) {
+	c0 := NewCell(WithColSpan(0))
+	if c0.ColSpan() != 1 {
+		t.Errorf("ColSpan(0) should clamp to 1, got %d", c0.ColSpan())
 	}
-	if _, err := r.AddCell(WithRowSpan(0)); !errors.Is(err, ErrInvalidSpan) {
-		t.Errorf("rowSpan=0: err = %v, want ErrInvalidSpan", err)
+	cNeg := NewCell(WithColSpan(-3))
+	if cNeg.ColSpan() != 1 {
+		t.Errorf("ColSpan(-3) should clamp to 1, got %d", cNeg.ColSpan())
+	}
+	r0 := NewCell(WithRowSpan(0))
+	if r0.RowSpan() != 1 {
+		t.Errorf("RowSpan(0) should clamp to 1, got %d", r0.RowSpan())
+	}
+	rNeg := NewCell(WithRowSpan(-3))
+	if rNeg.RowSpan() != 1 {
+		t.Errorf("RowSpan(-3) should clamp to 1, got %d", rNeg.RowSpan())
 	}
 }
 
 func TestAddRowWithPendingCells(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
 	c1 := NewCell(WithCellID("c1"), WithContent("a"))
 	c2 := NewCell(WithCellID("c2"), WithContent("b"))
 
-	r := h.row(tbl.AddRow(WithRowID("r"), WithCell(c1), WithCell(c2)))
+	r := tbl.AddRow(WithRowID("r"), WithCell(c1), WithCell(c2))
 	if r.ID() != "r" {
 		t.Errorf("row id = %q", r.ID())
 	}
@@ -114,16 +159,29 @@ func TestAddRowWithPendingCells(t *testing.T) {
 	}
 }
 
-func TestAttachCellTwiceFails(t *testing.T) {
-	h := th{t}
+func TestAttachCellMigratesBetweenRows(t *testing.T) {
 	tbl := NewTable()
-	r1 := h.row(tbl.AddRow())
+	r1 := tbl.AddRow()
 	c := NewCell(WithContent("x"))
-	if _, err := r1.AttachCell(c); err != nil {
-		t.Fatalf("AttachCell: %v", err)
+	r1.AttachCell(c)
+	if !c.adopted {
+		t.Fatal("cell should be adopted after first attach")
 	}
-	r2 := h.row(tbl.AddRow())
-	if _, err := r2.AttachCell(c); !errors.Is(err, ErrCellAlreadyAdopted) {
-		t.Errorf("second attach: err = %v, want ErrCellAlreadyAdopted", err)
+	if len(r1.Cells()) != 1 {
+		t.Fatalf("r1 cells after first attach = %d, want 1", len(r1.Cells()))
+	}
+
+	// Attaching to a second row should migrate the cell: it leaves r1
+	// and lives in r2.
+	r2 := tbl.AddRow()
+	r2.AttachCell(c)
+	if len(r1.Cells()) != 0 {
+		t.Errorf("r1 cells after migration = %d, want 0", len(r1.Cells()))
+	}
+	if len(r2.Cells()) != 1 || r2.Cells()[0] != c {
+		t.Errorf("r2 should own the migrated cell, got cells=%v", r2.Cells())
+	}
+	if !c.adopted {
+		t.Error("cell should remain adopted after migration")
 	}
 }

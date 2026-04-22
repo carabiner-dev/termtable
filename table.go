@@ -65,8 +65,9 @@ type tableOptions struct {
 
 func defaultTableOptions() tableOptions {
 	return tableOptions{
-		border:  DefaultSingleLine(),
-		padding: DefaultPadding(),
+		border:        DefaultSingleLine(),
+		padding:       DefaultPadding(),
+		spanOverwrite: true, // safe default — conflicts never halt rendering
 	}
 }
 
@@ -155,37 +156,44 @@ func (t *Table) Warnings() []Warning {
 	return out
 }
 
-// AddHeader appends a new header row and returns it.
-func (t *Table) AddHeader(opts ...RowOption) (*Header, error) {
+// AddHeader appends a new header row and returns it. Under the
+// default table configuration this call cannot fail. If strict
+// mode is enabled via WithSpanOverwrite(false) and a pre-built
+// cell supplied via WithCell produces a span conflict, AddHeader
+// panics — use AttachCellWithError on the returned row for
+// explicit error handling instead.
+func (t *Table) AddHeader(opts ...RowOption) *Header {
 	h := &Header{}
 	commit := func() { t.headers = append(t.headers, h) }
 	rollback := func() { t.headers = t.headers[:len(t.headers)-1] }
 	if err := t.addSectionRow(&h.rowBody, sectionHeader, len(t.headers), h, opts, commit, rollback); err != nil {
-		return nil, err
+		panic(err)
 	}
-	return h, nil
+	return h
 }
 
-// AddRow appends a new body row and returns it.
-func (t *Table) AddRow(opts ...RowOption) (*Row, error) {
+// AddRow appends a new body row and returns it. See AddHeader for
+// the panic contract.
+func (t *Table) AddRow(opts ...RowOption) *Row {
 	r := &Row{}
 	commit := func() { t.rows = append(t.rows, r) }
 	rollback := func() { t.rows = t.rows[:len(t.rows)-1] }
 	if err := t.addSectionRow(&r.rowBody, sectionBody, len(t.rows), r, opts, commit, rollback); err != nil {
-		return nil, err
+		panic(err)
 	}
-	return r, nil
+	return r
 }
 
-// AddFooter appends a new footer row and returns it.
-func (t *Table) AddFooter(opts ...RowOption) (*Footer, error) {
+// AddFooter appends a new footer row and returns it. See AddHeader
+// for the panic contract.
+func (t *Table) AddFooter(opts ...RowOption) *Footer {
 	f := &Footer{}
 	commit := func() { t.footers = append(t.footers, f) }
 	rollback := func() { t.footers = t.footers[:len(t.footers)-1] }
 	if err := t.addSectionRow(&f.rowBody, sectionFooter, len(t.footers), f, opts, commit, rollback); err != nil {
-		return nil, err
+		panic(err)
 	}
-	return f, nil
+	return f
 }
 
 // addSectionRow wires a rowBody into its section, applies RowOptions,
@@ -208,8 +216,10 @@ func (t *Table) addSectionRow(
 		o(body)
 	}
 	t.occForSection(section).ensure(sectionRow+1, 0)
-	if err := t.registry.register(body.id, wrapper); err != nil {
-		return err
+	if !t.registry.register(body.id, wrapper) {
+		t.authoringWarnings = append(t.authoringWarnings,
+			DuplicateIDEvent{ID: body.id, Kind: section.String()})
+		body.id = ""
 	}
 	commit()
 	if err := t.flushPendingCells(body); err != nil {
@@ -399,6 +409,23 @@ func (t *Table) unstampCell(c *Cell) {
 	}
 	occ := t.occForSection(c.section)
 	occ.unstamp(c, c.sectionRow, c.gridCol, c.rowSpan, c.colSpan)
+}
+
+// detachCell removes a cell from its current row and occupancy
+// grid, returning it to an unattached state ready for re-adoption
+// by a different row. Used by attachCell to migrate pre-adopted
+// cells without duplicating them in multiple rows.
+func (t *Table) detachCell(c *Cell) {
+	if c == nil || !c.adopted {
+		return
+	}
+	t.unstampCell(c)
+	t.removeCellFromRow(c)
+	c.adopted = false
+	c.gridCol = 0
+	c.sectionRow = 0
+	c.section = 0
+	c.table = nil
 }
 
 // nextColInRow finds the lowest column >= 0 in (section, row) that is

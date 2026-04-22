@@ -64,14 +64,13 @@ func TestColumnStyleMalformedIgnored(t *testing.T) {
 
 func TestColumnStyleColorCascadesToCells(t *testing.T) {
 	forceColor(t)
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
 	tbl.Column(1).Style("color: red")
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b"))) // should inherit red
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b")) // should inherit red
+	r.AddCell(WithContent("c"))
 
 	out := tbl.String()
 	// Red = 31. Must appear at least once (for col 1's cell).
@@ -82,20 +81,19 @@ func TestColumnStyleColorCascadesToCells(t *testing.T) {
 
 func TestCascadeRowOverridesColumnOverridesTable(t *testing.T) {
 	forceColor(t)
-	h := th{t}
 	tbl := NewTable(
 		WithTargetWidth(30),
 		WithTableStyle("color: blue"),
 	)
 	tbl.Column(0).Style("color: green") // overrides table-blue for col 0
 
-	hdr := h.header(tbl.AddHeader(WithRowStyle("color: red"))) // row overrides col+table
-	h.cell(hdr.AddCell(WithContent("H1")))
-	h.cell(hdr.AddCell(WithContent("H2")))
+	hdr := tbl.AddHeader(WithRowStyle("color: red")) // row overrides col+table
+	hdr.AddCell(WithContent("H1"))
+	hdr.AddCell(WithContent("H2"))
 
-	body := h.row(tbl.AddRow())
-	h.cell(body.AddCell(WithContent("B1"))) // col 0 cell: inherits col green
-	h.cell(body.AddCell(WithContent("B2"))) // col 1 cell: inherits table blue
+	body := tbl.AddRow()
+	body.AddCell(WithContent("B1")) // col 0 cell: inherits col green
+	body.AddCell(WithContent("B2")) // col 1 cell: inherits table blue
 
 	out := tbl.String()
 	// All three codes must appear somewhere.
@@ -111,16 +109,15 @@ func TestCascadeRowOverridesColumnOverridesTable(t *testing.T) {
 }
 
 func TestCellAlignmentBeatsRowBeatsColumn(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
 	tbl.Column(0).SetAlign(AlignRight)
 	tbl.Column(1).SetAlign(AlignRight)
 	tbl.Column(2).SetAlign(AlignRight)
 
-	hdr := h.header(tbl.AddHeader(WithRowStyle("text-align: center")))
-	h.cell(hdr.AddCell(WithContent("A")))                       // col→right, row→center → center
-	h.cell(hdr.AddCell(WithContent("B"), WithAlign(AlignLeft))) // cell→left
-	h.cell(hdr.AddCell(WithContent("C")))                       // row→center
+	hdr := tbl.AddHeader(WithRowStyle("text-align: center"))
+	hdr.AddCell(WithContent("A"))                       // col→right, row→center → center
+	hdr.AddCell(WithContent("B"), WithAlign(AlignLeft)) // cell→left
+	hdr.AddCell(WithContent("C"))                       // row→center
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -139,17 +136,16 @@ func TestCellAlignmentBeatsRowBeatsColumn(t *testing.T) {
 }
 
 func TestColumnStyleFlexAndWidthTogether(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(60))
 	// One col pinned, two flex at different weights.
 	tbl.Column(0).Style("width: 10")
 	tbl.Column(1).Style("flex: 1")
 	tbl.Column(2).Style("flex: 3")
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
 
 	l := Layout(tbl, Measure(tbl))
 	// Col 0 pinned = 10.

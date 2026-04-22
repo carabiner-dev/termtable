@@ -58,15 +58,28 @@ type Footer struct{ rowBody }
 // Public API on the wrapper types
 // ---------------------------------------------------------------------
 
-// AddCell constructs a cell from the given options and attaches it to
-// the row. Returns ErrSpanConflict (wrapped with coordinates) if the
-// cell's span overlaps an occupied grid slot and the table is not
-// configured with WithSpanOverwrite(true).
-func (r *Row) AddCell(opts ...CellOption) (*Cell, error) { return r.addCell(opts) }
+// AddCell constructs a cell from the given options and attaches it
+// to the row. Under the default table configuration
+// (WithSpanOverwrite(true)) this call cannot fail — span conflicts
+// absorb existing cells and are recorded as OverwriteEvent
+// warnings on Table.Warnings. Under WithSpanOverwrite(false),
+// a conflict panics; use AddCellWithError for explicit error
+// handling instead.
+func (r *Row) AddCell(opts ...CellOption) *Cell { return mustCell(r.addCell(opts)) }
 
-// AttachCell attaches a previously constructed cell to the row. The
-// cell must not already belong to another row (ErrCellAlreadyAdopted).
-func (r *Row) AttachCell(c *Cell) (*Cell, error) { return r.attachCell(c) }
+// AddCellWithError is the error-returning counterpart to AddCell.
+// Useful when the table runs in strict mode (WithSpanOverwrite(false))
+// and callers want to recover from span conflicts without a panic.
+func (r *Row) AddCellWithError(opts ...CellOption) (*Cell, error) { return r.addCell(opts) }
+
+// AttachCell attaches a previously constructed cell to the row.
+// Cells already belonging to another row are migrated — their
+// previous attachment is cleaned up before the new one is applied.
+// The panic / WithError contract mirrors AddCell.
+func (r *Row) AttachCell(c *Cell) *Cell { return mustCell(r.attachCell(c)) }
+
+// AttachCellWithError is the error-returning counterpart to AttachCell.
+func (r *Row) AttachCellWithError(c *Cell) (*Cell, error) { return r.attachCell(c) }
 
 // Cell returns the i-th cell declared in the row (logical
 // coordinate). Returns nil if i is out of range.
@@ -81,12 +94,18 @@ func (r *Row) ID() string { return r.id }
 
 func (r *Row) elementID() string { return r.id }
 
-// AddCell constructs a cell from the given options and attaches it to
-// the header row.
-func (h *Header) AddCell(opts ...CellOption) (*Cell, error) { return h.addCell(opts) }
+// AddCell constructs a cell from the given options and attaches it
+// to the header row. See Row.AddCell for the panic / error contract.
+func (h *Header) AddCell(opts ...CellOption) *Cell { return mustCell(h.addCell(opts)) }
+
+// AddCellWithError is the error-returning counterpart to AddCell.
+func (h *Header) AddCellWithError(opts ...CellOption) (*Cell, error) { return h.addCell(opts) }
 
 // AttachCell attaches a previously constructed cell to the header row.
-func (h *Header) AttachCell(c *Cell) (*Cell, error) { return h.attachCell(c) }
+func (h *Header) AttachCell(c *Cell) *Cell { return mustCell(h.attachCell(c)) }
+
+// AttachCellWithError is the error-returning counterpart to AttachCell.
+func (h *Header) AttachCellWithError(c *Cell) (*Cell, error) { return h.attachCell(c) }
 
 // Cell returns the i-th cell declared in the header row.
 func (h *Header) Cell(i int) *Cell { return h.cellAt(i) }
@@ -99,12 +118,18 @@ func (h *Header) ID() string { return h.id }
 
 func (h *Header) elementID() string { return h.id }
 
-// AddCell constructs a cell from the given options and attaches it to
-// the footer row.
-func (f *Footer) AddCell(opts ...CellOption) (*Cell, error) { return f.addCell(opts) }
+// AddCell constructs a cell from the given options and attaches it
+// to the footer row. See Row.AddCell for the panic / error contract.
+func (f *Footer) AddCell(opts ...CellOption) *Cell { return mustCell(f.addCell(opts)) }
+
+// AddCellWithError is the error-returning counterpart to AddCell.
+func (f *Footer) AddCellWithError(opts ...CellOption) (*Cell, error) { return f.addCell(opts) }
 
 // AttachCell attaches a previously constructed cell to the footer row.
-func (f *Footer) AttachCell(c *Cell) (*Cell, error) { return f.attachCell(c) }
+func (f *Footer) AttachCell(c *Cell) *Cell { return mustCell(f.attachCell(c)) }
+
+// AttachCellWithError is the error-returning counterpart to AttachCell.
+func (f *Footer) AttachCellWithError(c *Cell) (*Cell, error) { return f.attachCell(c) }
 
 // Cell returns the i-th cell declared in the footer row.
 func (f *Footer) Cell(i int) *Cell { return f.cellAt(i) }
@@ -116,6 +141,17 @@ func (f *Footer) Cells() []*Cell { return f.cellsCopy() }
 func (f *Footer) ID() string { return f.id }
 
 func (f *Footer) elementID() string { return f.id }
+
+// mustCell is the internal helper that converts the
+// (cell, error) return of the attach machinery into a single
+// *Cell result by panicking on non-nil error. It keeps the panic
+// vs. WithError split DRY across Row / Header / Footer.
+func mustCell(c *Cell, err error) *Cell {
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
 
 // ---------------------------------------------------------------------
 // Shared implementation on rowBody
@@ -142,22 +178,21 @@ func (r *rowBody) addCell(opts []CellOption) (*Cell, error) {
 	return r.attachCell(c)
 }
 
-// attachCell anchors a pre-built cell into the row, stamping the
-// section's occupancy grid. On success, the cell is appended to
-// r.cells, its ID is registered with the table, and it is marked
-// adopted.
+// attachCell anchors a cell into the row, stamping the section's
+// occupancy grid. If the cell is already adopted by another row, it
+// is first detached from its previous owner (a DOM-style move).
+// Duplicate-ID and content-source-swap events are surfaced as
+// warnings on Table.authoringWarnings rather than returned errors.
+//
+// The only case where this method returns a non-nil error is a
+// span conflict under WithSpanOverwrite(false) — the single
+// remaining "strict mode" failure mode.
 func (r *rowBody) attachCell(c *Cell) (*Cell, error) {
 	if c == nil {
 		return nil, nil
 	}
 	if c.adopted {
-		return nil, ErrCellAlreadyAdopted
-	}
-	if c.colSpan < 1 || c.rowSpan < 1 {
-		return nil, ErrInvalidSpan
-	}
-	if c.hasContent && c.reader != nil {
-		return nil, ErrContentAndReader
+		r.table.detachCell(c)
 	}
 
 	c.section = r.section
@@ -165,16 +200,40 @@ func (r *rowBody) attachCell(c *Cell) (*Cell, error) {
 	c.table = r.table
 
 	if err := r.table.stampCell(c); err != nil {
+		// Strict-mode span conflict. Keep c in the "unattached"
+		// state (adopted=false, no row membership) so callers can
+		// retry with a different cell definition.
+		c.section = 0
+		c.sectionRow = 0
+		c.table = nil
 		return nil, err
 	}
 
-	if err := r.table.registry.register(c.id, c); err != nil {
-		// Unstamp on ID conflict.
-		r.table.unstampCell(c)
-		return nil, err
+	if !r.table.registry.register(c.id, c) {
+		r.table.authoringWarnings = append(r.table.authoringWarnings,
+			DuplicateIDEvent{ID: c.id, Kind: "cell"})
+		// Clear the rejected ID so Cell.ID() matches what
+		// Table.GetElementByID returns.
+		c.id = ""
+	}
+
+	if c.contentSourceSwapped {
+		r.table.authoringWarnings = append(r.table.authoringWarnings,
+			ContentSourceReplacedEvent{
+				CellID:      c.id,
+				FinalSource: finalContentSourceLabel(c),
+			})
+		c.contentSourceSwapped = false
 	}
 
 	c.adopted = true
 	r.cells = append(r.cells, c)
 	return c, nil
+}
+
+func finalContentSourceLabel(c *Cell) string {
+	if c.reader != nil {
+		return "reader"
+	}
+	return "content"
 }

@@ -41,6 +41,12 @@ type Cell struct {
 	resolved   bool
 	resolveErr error
 
+	// contentSourceSwapped is set when WithContent replaced an
+	// existing reader (or vice versa). The flag is consumed on
+	// attachCell, which emits a ContentSourceReplacedEvent warning
+	// against the owning Table.
+	contentSourceSwapped bool
+
 	colSpan int
 	rowSpan int
 

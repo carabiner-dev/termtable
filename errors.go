@@ -12,15 +12,6 @@ var (
 	// sentinel with positional context.
 	ErrSpanConflict = errors.New("cell span conflicts with an occupied grid slot")
 
-	// ErrDuplicateID is returned when an element is registered with an ID
-	// that is already in use somewhere in the table.
-	ErrDuplicateID = errors.New("duplicate element id")
-
-	// ErrContentAndReader is returned when a cell is configured with both
-	// WithContent and WithReader. A cell carries at most one content
-	// source.
-	ErrContentAndReader = errors.New("cell has both content and reader set")
-
 	// ErrReaderAlreadyConsumed is a defensive guard returned if a cell's
 	// reader has already been consumed when a render pass attempts to
 	// resolve it again. In normal operation the cell buffers the reader's
@@ -33,17 +24,10 @@ var (
 	// readability.
 	ErrTargetTooNarrow = errors.New("target width too narrow for content minimums")
 
-	// ErrCellAlreadyAdopted is returned when WithCell is used to adopt a
-	// cell that already belongs to a row. A cell must be a member of
-	// exactly one row.
-	ErrCellAlreadyAdopted = errors.New("cell already belongs to a row")
-
-	// ErrInvalidSpan is returned when a cell is configured with a colSpan
-	// or rowSpan less than 1.
-	ErrInvalidSpan = errors.New("invalid span (must be >= 1)")
-
-	// ErrCrossSectionSpan is returned when a cell's rowSpan would extend
-	// beyond its section (header, body, or footer) into another section.
+	// ErrCrossSectionSpan is the sentinel wrapped by CrossSectionSpanEvent
+	// for callers that want to use errors.Is on a warning's backing
+	// error. No API returns this error directly — rowspan clamping
+	// is reported as a warning, not a returned error.
 	ErrCrossSectionSpan = errors.New("row span crosses section boundary")
 )
 
@@ -125,6 +109,37 @@ func (CrossSectionSpanEvent) warningTag() {}
 
 func (e CrossSectionSpanEvent) String() string {
 	return "rowspan crosses section boundary: cell id=" + quote(e.CellID)
+}
+
+// ContentSourceReplacedEvent is recorded when a cell is configured
+// with both WithContent and WithReader. The later option wins; the
+// earlier source is discarded. FinalSource is "content" or "reader"
+// depending on which option was applied last.
+type ContentSourceReplacedEvent struct {
+	CellID      string
+	FinalSource string
+}
+
+func (ContentSourceReplacedEvent) warningTag() {}
+
+func (e ContentSourceReplacedEvent) String() string {
+	return "content source replaced on cell id=" + quote(e.CellID) +
+		" (final source: " + e.FinalSource + ")"
+}
+
+// DuplicateIDEvent is recorded when an element tries to register an
+// ID already claimed by a different element. The first element
+// keeps its registration; the second element's ID is cleared so
+// Table.GetElementByID cannot return ambiguous results.
+type DuplicateIDEvent struct {
+	ID   string
+	Kind string // "cell", "row", "header", "footer", "column", "table"
+}
+
+func (DuplicateIDEvent) warningTag() {}
+
+func (e DuplicateIDEvent) String() string {
+	return "duplicate id: " + quote(e.ID) + " (kind: " + e.Kind + ")"
 }
 
 func quote(s string) string {

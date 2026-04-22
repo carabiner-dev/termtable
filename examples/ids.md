@@ -10,16 +10,16 @@ t := termtable.NewTable(
     termtable.WithTableID("checks"),
 )
 
-hdr, _ := t.AddHeader(termtable.WithRowID("head"))
+hdr := t.AddHeader(termtable.WithRowID("head"))
 hdr.AddCell(termtable.WithCellID("hc-check"), termtable.WithContent("Check"))
 hdr.AddCell(termtable.WithCellID("hc-status"), termtable.WithContent("Status"))
 
-r, _ := t.AddRow(termtable.WithRowID("r1"))
+r := t.AddRow(termtable.WithRowID("r1"))
 r.AddCell(termtable.WithContent("lookup"))
 r.AddCell(termtable.WithCellID("r1-status"), termtable.WithContent("PASS"))
 
 // Columns get IDs imperatively.
-_ = t.Column(1).SetID("status-col")
+t.Column(1).SetID("status-col")
 
 // Look up and narrow with a type switch.
 switch e := t.GetElementByID("r1-status").(type) {
@@ -40,9 +40,10 @@ found cell "r1-status" with content "PASS"
 ```
 
 Unique IDs are enforced — a second element registering an
-already-used ID gets `ErrDuplicateID`. Empty IDs are never
-registered, so you only pay for IDs on elements you actually care
-about.
+already-used ID has its own ID cleared and a `DuplicateIDEvent`
+lands on `Table.Warnings()`. The element itself is still attached;
+only the duplicated ID is dropped. Empty IDs are never registered,
+so you only pay for IDs on elements you actually care about.
 
 Related docs: the [top-level README](../README.md) and
 [../docs/warnings.md](../docs/warnings.md) (for the ID-collision

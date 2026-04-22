@@ -11,16 +11,6 @@ import (
 	"github.com/carabiner-dev/termtable"
 )
 
-// must is a small helper used by the examples to keep them readable.
-// Example functions assume construction succeeds; any unexpected
-// error is surfaced loudly rather than swallowed.
-func must[T any](v T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return v
-}
-
 // Example demonstrates the minimal usage pattern: build a table,
 // add headers and rows, print the result.
 func Example() {
@@ -30,17 +20,17 @@ func Example() {
 
 	t := termtable.NewTable(termtable.WithTargetWidth(30))
 
-	h := must(t.AddHeader())
-	must(h.AddCell(termtable.WithContent("Name")))
-	must(h.AddCell(termtable.WithContent("Count")))
+	h := t.AddHeader()
+	h.AddCell(termtable.WithContent("Name"))
+	h.AddCell(termtable.WithContent("Count"))
 
-	r1 := must(t.AddRow())
-	must(r1.AddCell(termtable.WithContent("alpha")))
-	must(r1.AddCell(termtable.WithContent("1")))
+	r1 := t.AddRow()
+	r1.AddCell(termtable.WithContent("alpha"))
+	r1.AddCell(termtable.WithContent("1"))
 
-	r2 := must(t.AddRow())
-	must(r2.AddCell(termtable.WithContent("beta")))
-	must(r2.AddCell(termtable.WithContent("2")))
+	r2 := t.AddRow()
+	r2.AddCell(termtable.WithContent("beta"))
+	r2.AddCell(termtable.WithContent("2"))
 
 	fmt.Print(t.String())
 	// Output:
@@ -63,15 +53,15 @@ func Example_columns() {
 	t.Column(1).Style("width: 6; text-align: center")
 	t.Column(2).Style("flex: 2")
 
-	h := must(t.AddHeader())
-	must(h.AddCell(termtable.WithContent("Check")))
-	must(h.AddCell(termtable.WithContent("Sts")))
-	must(h.AddCell(termtable.WithContent("Message")))
+	h := t.AddHeader()
+	h.AddCell(termtable.WithContent("Check"))
+	h.AddCell(termtable.WithContent("Sts"))
+	h.AddCell(termtable.WithContent("Message"))
 
-	r := must(t.AddRow())
-	must(r.AddCell(termtable.WithContent("lookup")))
-	must(r.AddCell(termtable.WithContent("OK")))
-	must(r.AddCell(termtable.WithContent("all good")))
+	r := t.AddRow()
+	r.AddCell(termtable.WithContent("lookup"))
+	r.AddCell(termtable.WithContent("OK"))
+	r.AddCell(termtable.WithContent("all good"))
 
 	fmt.Print(t.String())
 	// Output:
@@ -92,13 +82,13 @@ func Example_borderStyle() {
 		termtable.WithTableStyle("border-style: rounded"),
 	)
 
-	h := must(t.AddHeader())
-	must(h.AddCell(termtable.WithContent("Col A")))
-	must(h.AddCell(termtable.WithContent("Col B")))
+	h := t.AddHeader()
+	h.AddCell(termtable.WithContent("Col A"))
+	h.AddCell(termtable.WithContent("Col B"))
 
-	r := must(t.AddRow())
-	must(r.AddCell(termtable.WithContent("one")))
-	must(r.AddCell(termtable.WithContent("two")))
+	r := t.AddRow()
+	r.AddCell(termtable.WithContent("one"))
+	r.AddCell(termtable.WithContent("two"))
 
 	fmt.Print(t.String())
 	// Output:

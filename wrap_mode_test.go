@@ -14,20 +14,19 @@ import (
 // reflect only the mode under test.
 func longDescTable(t *testing.T, configure func(*Table), cellOpts ...CellOption) string {
 	t.Helper()
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	if configure != nil {
 		configure(tbl)
 	}
-	hdr := h.header(tbl.AddHeader())
-	h.cell(hdr.AddCell(WithContent("Name")))
-	h.cell(hdr.AddCell(WithContent("Description")))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("widget")))
-	h.cell(r.AddCell(append(
+	hdr := tbl.AddHeader()
+	hdr.AddCell(WithContent("Name"))
+	hdr.AddCell(WithContent("Description"))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("widget"))
+	r.AddCell(append(
 		[]CellOption{WithContent("a long description that would otherwise wrap across multiple lines")},
 		cellOpts...,
-	)...))
+	)...)
 	return tbl.String()
 }
 
@@ -139,17 +138,16 @@ func TestCellMultiLineOverridesColumn(t *testing.T) {
 }
 
 func TestTableWhiteSpaceNowrapCascades(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(
 		WithTargetWidth(40),
 		WithTableStyle("white-space: nowrap"),
 	)
-	hdr := h.header(tbl.AddHeader())
-	h.cell(hdr.AddCell(WithContent("Name")))
-	h.cell(hdr.AddCell(WithContent("Description")))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("widget")))
-	h.cell(r.AddCell(WithContent("a long description that would otherwise wrap across multiple lines")))
+	hdr := tbl.AddHeader()
+	hdr.AddCell(WithContent("Name"))
+	hdr.AddCell(WithContent("Description"))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("widget"))
+	r.AddCell(WithContent("a long description that would otherwise wrap across multiple lines"))
 
 	out := tbl.String()
 	rows := contentLines(out)

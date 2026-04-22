@@ -24,30 +24,28 @@ func TestEmptyTableDimensions(t *testing.T) {
 }
 
 func TestNumRowsSumAcrossSections(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	h.header(tbl.AddHeader())
-	h.header(tbl.AddHeader())
-	h.row(tbl.AddRow())
-	h.row(tbl.AddRow())
-	h.row(tbl.AddRow())
-	h.footer(tbl.AddFooter())
+	tbl.AddHeader()
+	tbl.AddHeader()
+	tbl.AddRow()
+	tbl.AddRow()
+	tbl.AddRow()
+	tbl.AddFooter()
 	if got := tbl.NumRows(); got != 6 {
 		t.Errorf("NumRows = %d, want 6 (2h + 3r + 1f)", got)
 	}
 }
 
 func TestCellAtAcrossSections(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	hd := h.header(tbl.AddHeader())
-	hc := h.cell(hd.AddCell(WithCellID("hc"), WithContent("head")))
+	hd := tbl.AddHeader()
+	hc := hd.AddCell(WithCellID("hc"), WithContent("head"))
 
-	r := h.row(tbl.AddRow())
-	rc := h.cell(r.AddCell(WithCellID("rc"), WithContent("body")))
+	r := tbl.AddRow()
+	rc := r.AddCell(WithCellID("rc"), WithContent("body"))
 
-	f := h.footer(tbl.AddFooter())
-	fc := h.cell(f.AddCell(WithCellID("fc"), WithContent("foot")))
+	f := tbl.AddFooter()
+	fc := f.AddCell(WithCellID("fc"), WithContent("foot"))
 
 	// Absolute row indices: header at 0, body at 1, footer at 2.
 	if got := tbl.CellAt(0, 0); got != hc {
@@ -68,10 +66,9 @@ func TestCellAtAcrossSections(t *testing.T) {
 }
 
 func TestCellAtSpansMapToSameCell(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	c := h.cell(r.AddCell(WithContent("wide"), WithColSpan(3)))
+	r := tbl.AddRow()
+	c := r.AddCell(WithContent("wide"), WithColSpan(3))
 	for col := range 3 {
 		if got := tbl.CellAt(0, col); got != c {
 			t.Errorf("CellAt(0,%d) = %v, want %v", col, got, c)
@@ -83,11 +80,10 @@ func TestCellAtSpansMapToSameCell(t *testing.T) {
 }
 
 func TestInBounds(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
 	cases := []struct {
 		r, c int
 		want bool
@@ -129,11 +125,10 @@ func TestResolvedTargetWidth(t *testing.T) {
 }
 
 func TestColumnAutoCreation(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
+	r := tbl.AddRow()
 	for range 4 {
-		h.cell(r.AddCell(WithContent("x")))
+		r.AddCell(WithContent("x"))
 	}
 	if got := tbl.NumColumns(); got != 4 {
 		t.Errorf("NumColumns = %d, want 4", got)
@@ -162,18 +157,17 @@ func TestColumnExplicitCreate(t *testing.T) {
 }
 
 func TestMultiHeaderFooterOrdering(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	h1 := h.header(tbl.AddHeader())
-	h.cell(h1.AddCell(WithContent("h1")))
-	h2 := h.header(tbl.AddHeader())
-	h.cell(h2.AddCell(WithContent("h2")))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("r")))
-	f1 := h.footer(tbl.AddFooter())
-	h.cell(f1.AddCell(WithContent("f1")))
-	f2 := h.footer(tbl.AddFooter())
-	h.cell(f2.AddCell(WithContent("f2")))
+	h1 := tbl.AddHeader()
+	h1.AddCell(WithContent("h1"))
+	h2 := tbl.AddHeader()
+	h2.AddCell(WithContent("h2"))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("r"))
+	f1 := tbl.AddFooter()
+	f1.AddCell(WithContent("f1"))
+	f2 := tbl.AddFooter()
+	f2.AddCell(WithContent("f2"))
 
 	if tbl.NumRows() != 5 {
 		t.Fatalf("NumRows = %d, want 5", tbl.NumRows())

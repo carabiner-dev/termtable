@@ -4,7 +4,9 @@ One minimal, focused sample per major feature. Each file has the
 smallest runnable Go snippet that exercises the feature plus the
 rendered output, so you can read or copy.
 
-For full reference documentation see [../docs/](../docs/).
+If you want a narrative walkthrough first, read
+[../docs/guide.md](../docs/guide.md). For full reference
+documentation see [../docs/](../docs/).
 
 | Example | Feature |
 |:---|:---|

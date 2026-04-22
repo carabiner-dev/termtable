@@ -13,14 +13,13 @@ import (
 // TestRenderBasic2x2 locks the rendered output of a simple 2-column,
 // 2-row table end-to-end.
 func TestRenderBasic2x2(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(20))
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("A")))
-	h.cell(r0.AddCell(WithContent("B")))
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("C")))
-	h.cell(r1.AddCell(WithContent("D")))
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("A"))
+	r0.AddCell(WithContent("B"))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("C"))
+	r1.AddCell(WithContent("D"))
 
 	want := strings.Join([]string{
 		"┌─────────┬────────┐",
@@ -44,18 +43,17 @@ func TestRenderEmptyTable(t *testing.T) {
 }
 
 func TestRenderColspanSuppressesInteriorVerticals(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	banner := h.header(tbl.AddHeader())
-	h.cell(banner.AddCell(
+	banner := tbl.AddHeader()
+	banner.AddCell(
 		WithContent("Banner"),
 		WithColSpan(3),
 		WithAlign(AlignCenter),
-	))
-	cols := h.header(tbl.AddHeader())
-	h.cell(cols.AddCell(WithContent("a")))
-	h.cell(cols.AddCell(WithContent("b")))
-	h.cell(cols.AddCell(WithContent("c")))
+	)
+	cols := tbl.AddHeader()
+	cols.AddCell(WithContent("a"))
+	cols.AddCell(WithContent("b"))
+	cols.AddCell(WithContent("c"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -79,13 +77,12 @@ func TestRenderColspanSuppressesInteriorVerticals(t *testing.T) {
 }
 
 func TestRenderRowspanPassesThroughBorder(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("big\nspan"), WithRowSpan(2)))
-	h.cell(r0.AddCell(WithContent("x")))
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("y")))
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("big\nspan"), WithRowSpan(2))
+	r0.AddCell(WithContent("x"))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("y"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -106,12 +103,11 @@ func TestRenderRowspanPassesThroughBorder(t *testing.T) {
 }
 
 func TestRenderAlignLeftRightCenter(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("L"), WithAlign(AlignLeft)))
-	h.cell(r.AddCell(WithContent("C"), WithAlign(AlignCenter)))
-	h.cell(r.AddCell(WithContent("R"), WithAlign(AlignRight)))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("L"), WithAlign(AlignLeft))
+	r.AddCell(WithContent("C"), WithAlign(AlignCenter))
+	r.AddCell(WithContent("R"), WithAlign(AlignRight))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -127,11 +123,10 @@ func TestRenderAlignLeftRightCenter(t *testing.T) {
 }
 
 func TestRenderWrapsLongCellContent(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(20))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("short")))
-	h.cell(r.AddCell(WithContent("this is longer text")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("short"))
+	r.AddCell(WithContent("this is longer text"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -148,12 +143,11 @@ func TestRenderWrapsLongCellContent(t *testing.T) {
 }
 
 func TestRenderCJKKeepsGridAligned(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("ascii")))
-	h.cell(r.AddCell(WithContent("中文"))) //nolint:gosmopolitan // CJK render test
-	h.cell(r.AddCell(WithContent("abc")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("ascii"))
+	r.AddCell(WithContent("中文")) //nolint:gosmopolitan // CJK render test
+	r.AddCell(WithContent("abc"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -169,12 +163,11 @@ func TestRenderCJKKeepsGridAligned(t *testing.T) {
 }
 
 func TestRenderEmojiKeepsGridAligned(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("ascii")))
-	h.cell(r.AddCell(WithContent("🔥🚀")))
-	h.cell(r.AddCell(WithContent("👨‍👩‍👧")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("ascii"))
+	r.AddCell(WithContent("🔥🚀"))
+	r.AddCell(WithContent("👨‍👩‍👧"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -188,11 +181,10 @@ func TestRenderEmojiKeepsGridAligned(t *testing.T) {
 }
 
 func TestRenderPreservesANSI(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(20))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("\x1b[31mred\x1b[0m")))
-	h.cell(r.AddCell(WithContent("plain")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("\x1b[31mred\x1b[0m"))
+	r.AddCell(WithContent("plain"))
 
 	out := tbl.String()
 	if !strings.Contains(out, "\x1b[31m") {
@@ -213,11 +205,10 @@ func TestRenderPreservesANSI(t *testing.T) {
 }
 
 func TestWriteToReturnsLayoutError(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(10))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("loooooooongword"))) // min > available
-	h.cell(r.AddCell(WithContent("anotheroneeeee")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("loooooooongword")) // min > available
+	r.AddCell(WithContent("anotheroneeeee"))
 
 	var buf bytes.Buffer
 	_, err := tbl.WriteTo(&buf)
@@ -231,15 +222,14 @@ func TestWriteToReturnsLayoutError(t *testing.T) {
 }
 
 func TestRenderRowspanFillsRemainingWithBlanks(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("short"), WithRowSpan(3)))
-	h.cell(r0.AddCell(WithContent("x")))
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("y")))
-	r2 := h.row(tbl.AddRow())
-	h.cell(r2.AddCell(WithContent("z")))
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("short"), WithRowSpan(3))
+	r0.AddCell(WithContent("x"))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("y"))
+	r2 := tbl.AddRow()
+	r2.AddCell(WithContent("z"))
 
 	out := tbl.String()
 	// Just ensure the table parses as a rectangle — every line has the
@@ -255,17 +245,16 @@ func TestRenderRowspanFillsRemainingWithBlanks(t *testing.T) {
 }
 
 func TestRenderHeadersBodyFootersAllSections(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	hd := h.header(tbl.AddHeader())
-	h.cell(hd.AddCell(WithContent("h1")))
-	h.cell(hd.AddCell(WithContent("h2")))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("b1")))
-	h.cell(r.AddCell(WithContent("b2")))
-	f := h.footer(tbl.AddFooter())
-	h.cell(f.AddCell(WithContent("f1")))
-	h.cell(f.AddCell(WithContent("f2")))
+	hd := tbl.AddHeader()
+	hd.AddCell(WithContent("h1"))
+	hd.AddCell(WithContent("h2"))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("b1"))
+	r.AddCell(WithContent("b2"))
+	f := tbl.AddFooter()
+	f.AddCell(WithContent("f1"))
+	f.AddCell(WithContent("f2"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")

@@ -61,32 +61,29 @@ func (c *Column) ID() string { return c.id }
 
 // SetID assigns the column an ID that can be resolved via
 // Table.GetElementByID. Passing an empty string unsets a previously
-// assigned ID. Returns an error only if the new ID collides with an
-// existing element's ID in the same table.
-func (c *Column) SetID(id string) error {
+// assigned ID. If id collides with an element already using it, a
+// DuplicateIDEvent is recorded on Table.Warnings, the old ID mapping
+// is preserved, and the column's ID is cleared.
+func (c *Column) SetID(id string) *Column {
 	if c.table == nil {
 		c.id = id
-		return nil
+		return c
 	}
 	if c.id != "" {
 		c.table.registry.unregister(c.id)
 	}
 	if id == "" {
 		c.id = ""
-		return nil
+		return c
 	}
-	if err := c.table.registry.register(id, c); err != nil {
-		// Re-register the old id on failure so state stays consistent.
-		// The old id was registered before; re-registering the same
-		// (id, element) pair cannot fail because the registry treats
-		// an identical mapping as a no-op.
-		if c.id != "" {
-			c.table.registry.m[c.id] = c
-		}
-		return err
+	if !c.table.registry.register(id, c) {
+		c.table.authoringWarnings = append(c.table.authoringWarnings,
+			DuplicateIDEvent{ID: id, Kind: "column"})
+		c.id = ""
+		return c
 	}
 	c.id = id
-	return nil
+	return c
 }
 
 // Index returns the zero-based column index.

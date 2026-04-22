@@ -15,16 +15,15 @@ import (
 // ---------------------------------------------------------------------
 
 func TestCellGridRowAbsoluteAcrossSections(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	hd := h.header(tbl.AddHeader())
-	hc := h.cell(hd.AddCell(WithContent("H")))
+	hd := tbl.AddHeader()
+	hc := hd.AddCell(WithContent("H"))
 
-	r := h.row(tbl.AddRow())
-	rc := h.cell(r.AddCell(WithContent("B")))
+	r := tbl.AddRow()
+	rc := r.AddCell(WithContent("B"))
 
-	f := h.footer(tbl.AddFooter())
-	fc := h.cell(f.AddCell(WithContent("F")))
+	f := tbl.AddFooter()
+	fc := f.AddCell(WithContent("F"))
 
 	cases := []struct {
 		c    *Cell
@@ -55,16 +54,15 @@ func TestCellGridRowDetachedCellFallsBack(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestWarningsDoNotDuplicateAcrossRenders(t *testing.T) {
-	h := th{t}
 	// Scenario: multi-span cell wider than the target budget can
 	// accommodate. Each render produces a SpanOverflowEvent.
 	tbl := NewTable(WithTargetWidth(20))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithCellID("wide"),
+	r := tbl.AddRow()
+	r.AddCell(WithCellID("wide"),
 		WithContent("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 		WithColSpan(2),
-	))
-	h.cell(r.AddCell(WithContent("x"))) // forces 2 cols
+	)
+	r.AddCell(WithContent("x")) // forces 2 cols
 
 	_ = tbl.String()
 	first := len(tbl.Warnings())
@@ -76,12 +74,11 @@ func TestWarningsDoNotDuplicateAcrossRenders(t *testing.T) {
 }
 
 func TestAuthoringWarningsPersistAcrossRenders(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithSpanOverwrite(true), WithTargetWidth(30))
-	r0 := h.row(tbl.AddRow())
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithCellID("victim"), WithContent("v")))
-	h.cell(r0.AddCell(WithContent("over"), WithRowSpan(2)))
+	r0 := tbl.AddRow()
+	r1 := tbl.AddRow()
+	r1.AddCell(WithCellID("victim"), WithContent("v"))
+	r0.AddCell(WithContent("over"), WithRowSpan(2))
 
 	before := len(tbl.Warnings())
 	_ = tbl.String()
@@ -106,11 +103,10 @@ type boomReader struct{}
 func (boomReader) Read([]byte) (int, error) { return 0, errors.New("boom") }
 
 func TestReaderErrorSurfacedAsWarning(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithCellID("broken"), WithReader(boomReader{})))
-	h.cell(r.AddCell(WithContent("ok")))
+	r := tbl.AddRow()
+	r.AddCell(WithCellID("broken"), WithReader(boomReader{}))
+	r.AddCell(WithContent("ok"))
 
 	_ = tbl.String()
 	var saw bool
@@ -130,18 +126,17 @@ func TestReaderErrorSurfacedAsWarning(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestCrossSectionRowSpanClampedAndWarned(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	// One header row, header cell with rowSpan=3 — would reach into
 	// body territory. Must be clamped without panicking.
-	hd := h.header(tbl.AddHeader())
-	h.cell(hd.AddCell(WithCellID("overreach"),
-		WithContent("banner"), WithRowSpan(3)))
-	h.cell(hd.AddCell(WithContent("col2")))
+	hd := tbl.AddHeader()
+	hd.AddCell(WithCellID("overreach"),
+		WithContent("banner"), WithRowSpan(3))
+	hd.AddCell(WithContent("col2"))
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("b1")))
-	h.cell(r.AddCell(WithContent("b2")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("b1"))
+	r.AddCell(WithContent("b2"))
 
 	// Just rendering would panic before the fix.
 	_ = tbl.String()
@@ -170,14 +165,13 @@ func TestCrossSectionRowSpanClampedAndWarned(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestWithTablePaddingChangesLayout(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(
 		WithTargetWidth(30),
 		WithTablePadding(Padding{Left: 0, Right: 0}),
 	)
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -195,38 +189,39 @@ func TestWithTablePaddingChangesLayout(t *testing.T) {
 
 func TestColumnSetIDRegisters(t *testing.T) {
 	tbl := NewTable()
-	col := tbl.Column(0)
-	if err := col.SetID("status"); err != nil {
-		t.Fatalf("SetID: %v", err)
-	}
+	col := tbl.Column(0).SetID("status")
 	got := tbl.GetElementByID("status")
 	if got != col {
 		t.Errorf("GetElementByID = %v, want column", got)
 	}
 }
 
-func TestColumnSetIDCollisionReturnsError(t *testing.T) {
-	h := th{t}
+func TestColumnSetIDCollisionWarns(t *testing.T) {
 	tbl := NewTable()
-	r := h.row(tbl.AddRow(WithRowID("taken")))
-	_ = r
+	tbl.AddRow(WithRowID("taken"))
 
 	col := tbl.Column(0)
-	err := col.SetID("taken")
-	if !errors.Is(err, ErrDuplicateID) {
-		t.Errorf("err = %v, want ErrDuplicateID", err)
+	col.SetID("taken")
+	if col.ID() != "" {
+		t.Errorf("column ID after collision = %q, want empty", col.ID())
+	}
+	var saw bool
+	for _, w := range tbl.Warnings() {
+		ev, ok := w.(DuplicateIDEvent)
+		if ok && ev.ID == "taken" && ev.Kind == "column" {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Errorf("expected DuplicateIDEvent for column, warnings=%v", tbl.Warnings())
 	}
 }
 
 func TestColumnSetIDReassignUnregistersOld(t *testing.T) {
 	tbl := NewTable()
 	col := tbl.Column(0)
-	if err := col.SetID("first"); err != nil {
-		t.Fatal(err)
-	}
-	if err := col.SetID("second"); err != nil {
-		t.Fatal(err)
-	}
+	col.SetID("first")
+	col.SetID("second")
 	if tbl.GetElementByID("first") != nil {
 		t.Error("old id should be unregistered after reassign")
 	}
@@ -240,11 +235,10 @@ func TestColumnSetIDReassignUnregistersOld(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestLastRenderErrorRoundTrips(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(5))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("longwordone")))
-	h.cell(r.AddCell(WithContent("anothertoo")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("longwordone"))
+	r.AddCell(WithContent("anothertoo"))
 
 	// String() should capture the narrow-width error.
 	_ = tbl.String()
@@ -266,15 +260,14 @@ func TestLastRenderErrorRoundTrips(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestHeaderRowSpanAcrossMultipleHeaders(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
-	h1 := h.header(tbl.AddHeader())
-	h.cell(h1.AddCell(WithContent("pivot"), WithRowSpan(2)))
-	h.cell(h1.AddCell(WithContent("a")))
+	h1 := tbl.AddHeader()
+	h1.AddCell(WithContent("pivot"), WithRowSpan(2))
+	h1.AddCell(WithContent("a"))
 
-	h2 := h.header(tbl.AddHeader())
+	h2 := tbl.AddHeader()
 	// Column 0 is reserved by the rowspan; first cell auto-advances.
-	h.cell(h2.AddCell(WithContent("b")))
+	h2.AddCell(WithContent("b"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -320,11 +313,10 @@ func TestCustomBorderSetUsedInRender(t *testing.T) {
 	ascii.Joins[armN|armE|armW] = '+'
 	ascii.Joins[armN|armE|armS|armW] = '+'
 
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(15), WithBorder(ascii))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
 
 	out := tbl.String()
 	// Must not contain any unicode box glyphs.
@@ -346,12 +338,11 @@ func TestCustomBorderSetUsedInRender(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestReaderContentPersistsAcrossRenders(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
-	r := h.row(tbl.AddRow())
-	c := h.cell(r.AddCell(WithCellID("lazy"),
+	r := tbl.AddRow()
+	c := r.AddCell(WithCellID("lazy"),
 		WithReader(strings.NewReader("content-from-reader")),
-	))
+	)
 
 	var buf bytes.Buffer
 	if _, err := tbl.WriteTo(&buf); err != nil {
@@ -377,11 +368,10 @@ func TestReaderContentPersistsAcrossRenders(t *testing.T) {
 // ---------------------------------------------------------------------
 
 func TestEmptyCellRendersBlank(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(20))
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("")))
-	h.cell(r.AddCell(WithContent("x")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent(""))
+	r.AddCell(WithContent("x"))
 
 	out := tbl.String()
 	// Must produce exactly 5 lines (top + 1 row + bottom = 3; no error

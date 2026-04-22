@@ -9,11 +9,11 @@ t := termtable.NewTable(
     termtable.WithBorder(termtable.RoundedLine()),
 )
 
-h, _ := t.AddHeader()
+h := t.AddHeader()
 h.AddCell(termtable.WithContent("Col A"))
 h.AddCell(termtable.WithContent("Col B"))
 
-r, _ := t.AddRow()
+r := t.AddRow()
 r.AddCell(termtable.WithContent("one"))
 r.AddCell(termtable.WithContent("two"))
 

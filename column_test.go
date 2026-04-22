@@ -52,14 +52,13 @@ func TestColumnSettersClearOnNonPositive(t *testing.T) {
 }
 
 func TestLayoutExplicitWidthPins(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	tbl.Column(1).SetWidth(8)
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("alpha")))
-	h.cell(r.AddCell(WithContent("x")))
-	h.cell(r.AddCell(WithContent("gamma")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("alpha"))
+	r.AddCell(WithContent("x"))
+	r.AddCell(WithContent("gamma"))
 
 	l := Layout(tbl, Measure(tbl))
 	if l.err != nil {
@@ -71,14 +70,13 @@ func TestLayoutExplicitWidthPins(t *testing.T) {
 }
 
 func TestLayoutMaxCapsRedistributesLeftover(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	tbl.Column(1).SetMax(6)
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
 
 	l := Layout(tbl, Measure(tbl))
 	if l.colAssigned[1] > 6 {
@@ -96,14 +94,13 @@ func TestLayoutMaxCapsRedistributesLeftover(t *testing.T) {
 }
 
 func TestLayoutUserMinHonored(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	tbl.Column(0).SetMin(15)
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a"))) // content min = 1
-	h.cell(r.AddCell(WithContent("b")))
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a")) // content min = 1
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
 
 	l := Layout(tbl, Measure(tbl))
 	if l.colAssigned[0] < 15 {
@@ -112,14 +109,13 @@ func TestLayoutUserMinHonored(t *testing.T) {
 }
 
 func TestLayoutWeightsProportional(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	tbl.Column(1).SetWeight(3)
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
 
 	l := Layout(tbl, Measure(tbl))
 	// Col 1 should be noticeably wider than cols 0 and 2.
@@ -137,14 +133,13 @@ func TestLayoutWeightsProportional(t *testing.T) {
 }
 
 func TestLayoutWeightZeroDoesNotGrow(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	tbl.Column(0).SetWeight(0) // pinned near content min
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("abc"))) // content min = 3
-	h.cell(r.AddCell(WithContent("b")))
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("abc")) // content min = 3
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
 
 	l := Layout(tbl, Measure(tbl))
 	if l.colAssigned[0] != 3 {
@@ -153,13 +148,12 @@ func TestLayoutWeightZeroDoesNotGrow(t *testing.T) {
 }
 
 func TestLayoutExplicitWidthBelowContentMinOverflows(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(40))
 	tbl.Column(0).SetWidth(3) // below content min of "widecontent" = 11
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("widecontent")))
-	h.cell(r.AddCell(WithContent("b")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("widecontent"))
+	r.AddCell(WithContent("b"))
 
 	l := Layout(tbl, Measure(tbl))
 	// Content min wins; col 0 overflows the requested pin.
@@ -170,14 +164,13 @@ func TestLayoutExplicitWidthBelowContentMinOverflows(t *testing.T) {
 }
 
 func TestColumnAlignmentCascadesToCells(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
 	tbl.Column(1).SetAlign(AlignCenter)
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("L")))                        // no align: defaults left
-	h.cell(r.AddCell(WithContent("X")))                        // no align: inherits column center
-	h.cell(r.AddCell(WithContent("R"), WithAlign(AlignRight))) // explicit: right
+	r := tbl.AddRow()
+	r.AddCell(WithContent("L"))                        // no align: defaults left
+	r.AddCell(WithContent("X"))                        // no align: inherits column center
+	r.AddCell(WithContent("R"), WithAlign(AlignRight)) // explicit: right
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -194,15 +187,14 @@ func TestColumnAlignmentCascadesToCells(t *testing.T) {
 }
 
 func TestCellAlignmentOverridesColumn(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30))
 	tbl.Column(0).SetAlign(AlignRight)
 
-	r := h.row(tbl.AddRow())
+	r := tbl.AddRow()
 	// Cell sets its own alignment — column is overridden.
-	h.cell(r.AddCell(WithContent("X"), WithAlign(AlignLeft)))
-	h.cell(r.AddCell(WithContent("y")))
-	h.cell(r.AddCell(WithContent("z")))
+	r.AddCell(WithContent("X"), WithAlign(AlignLeft))
+	r.AddCell(WithContent("y"))
+	r.AddCell(WithContent("z"))
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -214,7 +206,6 @@ func TestCellAlignmentOverridesColumn(t *testing.T) {
 }
 
 func TestLayoutAllowsWidthLeftoverBelowTarget(t *testing.T) {
-	h := th{t}
 	// Cap all columns; solver can't use the full budget. Output should
 	// be narrower than target.
 	tbl := NewTable(WithTargetWidth(100))
@@ -222,10 +213,10 @@ func TestLayoutAllowsWidthLeftoverBelowTarget(t *testing.T) {
 	tbl.Column(1).SetMax(5)
 	tbl.Column(2).SetMax(5)
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("a")))
-	h.cell(r.AddCell(WithContent("b")))
-	h.cell(r.AddCell(WithContent("c")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
 
 	l := Layout(tbl, Measure(tbl))
 	for i, v := range l.colAssigned {

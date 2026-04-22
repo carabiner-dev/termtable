@@ -36,18 +36,16 @@ need the fields.
 
 ### `OverwriteEvent` — authoring
 
-Emitted when `WithSpanOverwrite(true)` is in effect and a newly
-added cell's rectangle intersects an earlier cell. The earlier cell
-is either **dropped** (its anchor is inside the new rectangle) or
-**truncated** (its anchor sits outside but its span reaches in).
+Emitted when a newly added cell's rectangle intersects an earlier
+cell. The earlier cell is either **dropped** (its anchor is inside
+the new rectangle) or **truncated** (its anchor sits outside but
+its span reaches in). This is the default behaviour — no
+`WithSpanOverwrite` call is needed.
 
 ```go
-t := termtable.NewTable(
-    termtable.WithSpanOverwrite(true),
-    termtable.WithTargetWidth(30),
-)
-r0, _ := t.AddRow()
-r1, _ := t.AddRow()
+t := termtable.NewTable(termtable.WithTargetWidth(30))
+r0 := t.AddRow()
+r1 := t.AddRow()
 r1.AddCell(termtable.WithCellID("victim"), termtable.WithContent("v"))
 r0.AddCell(termtable.WithContent("over"), termtable.WithRowSpan(2))
 ```
@@ -64,9 +62,52 @@ Fields:
 | `TruncatedID` / `NewColSpan` / `NewRowSpan` | The victim's span was clipped. |
 | `At`                             | Anchor of the overwriting cell. |
 
-Without `WithSpanOverwrite(true)`, a conflict returns
-`ErrSpanConflict` from `AddCell` directly — no event is recorded
-since the cell was never added.
+Callers that want the old "no silent overwrites" behaviour can pass
+`WithSpanOverwrite(false)` to enter **strict mode**. In strict mode
+`AddCell` panics on span conflict, and the opt-in `AddCellWithError`
+variant returns `ErrSpanConflict` instead.
+
+### `DuplicateIDEvent` — authoring
+
+Emitted when an element is attached with an ID that is already in
+use. The element itself is still attached; only the duplicated ID
+is dropped (the field is cleared on the losing element). The
+original owner keeps the ID.
+
+```go
+t := termtable.NewTable()
+r := t.AddRow()
+r.AddCell(termtable.WithCellID("dup"), termtable.WithContent("a"))
+r.AddCell(termtable.WithCellID("dup"), termtable.WithContent("b"))
+// The second cell's ID is cleared; GetElementByID("dup") still
+// resolves to the first cell.
+```
+
+```
+duplicate id: "dup" (kind: cell)
+```
+
+Fields: `ID`, `Kind` — where `Kind` is `"cell"`, `"row"`,
+`"header"`, `"footer"`, `"column"`, or `"table"`.
+
+### `ContentSourceReplacedEvent` — authoring
+
+Emitted when both `WithContent` and `WithReader` are supplied for
+the same cell. The options apply in the order they appear, and the
+last one wins; the prior source is cleared. The event makes the
+swap visible rather than silent.
+
+```go
+r := t.AddRow()
+r.AddCell(
+    termtable.WithCellID("c"),
+    termtable.WithContent("hi"),
+    termtable.WithReader(strings.NewReader("also hi")),
+) // reader wins; ContentSourceReplacedEvent recorded
+```
+
+Fields: `CellID`, `FinalSource` — where `FinalSource` is the
+resulting content source (`"reader"` or `"content"`).
 
 ### `SpanOverflowEvent` — render
 
@@ -77,7 +118,7 @@ slot.
 
 ```go
 t := termtable.NewTable(termtable.WithTargetWidth(14))
-r, _ := t.AddRow()
+r := t.AddRow()
 r.AddCell(
     termtable.WithCellID("banner"),
     termtable.WithContent("widebannerwideword"),
@@ -104,7 +145,7 @@ type boomReader struct{}
 func (boomReader) Read([]byte) (int, error) { return 0, errors.New("network down") }
 
 t := termtable.NewTable(termtable.WithTargetWidth(30))
-r, _ := t.AddRow()
+r := t.AddRow()
 r.AddCell(termtable.WithCellID("broken"), termtable.WithReader(boomReader{}))
 r.AddCell(termtable.WithContent("ok"))
 ```
@@ -126,14 +167,14 @@ time behaviour is clipped.
 
 ```go
 t := termtable.NewTable(termtable.WithTargetWidth(40))
-h, _ := t.AddHeader()
+h := t.AddHeader()
 h.AddCell(
     termtable.WithCellID("overreach"),
     termtable.WithContent("banner"),
     termtable.WithRowSpan(3), // only 1 header exists
 )
 h.AddCell(termtable.WithContent("col2"))
-rb, _ := t.AddRow()
+rb := t.AddRow()
 rb.AddCell(termtable.WithContent("b1"))
 rb.AddCell(termtable.WithContent("b2"))
 ```
@@ -191,6 +232,11 @@ for _, w := range tbl.Warnings() {
         if ev.DroppedID != "" {
             log.Warnf("table: dropped cell %s during overwrite", ev.DroppedID)
         }
+    case termtable.DuplicateIDEvent:
+        log.Warnf("table: duplicate %s id %q cleared", ev.Kind, ev.ID)
+    case termtable.ContentSourceReplacedEvent:
+        log.Warnf("table: cell %s content source replaced (now %s)",
+            ev.CellID, ev.FinalSource)
     case termtable.SpanOverflowEvent:
         log.Warnf("table: cell %s needs %d cols but only got %d",
             ev.CellID, ev.Required, ev.Got)

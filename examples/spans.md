@@ -8,7 +8,7 @@ automatically.
 ```go
 t := termtable.NewTable(termtable.WithTargetWidth(40))
 
-r0, _ := t.AddRow()
+r0 := t.AddRow()
 r0.AddCell(
     termtable.WithContent("big\nspan"),
     termtable.WithRowSpan(2),
@@ -18,10 +18,10 @@ r0.AddCell(termtable.WithContent("alpha"))
 
 // Row 1: column 0 and 1 are reserved by the rowspan above, so the
 // first AddCell lands at column 2.
-r1, _ := t.AddRow()
+r1 := t.AddRow()
 r1.AddCell(termtable.WithContent("beta"))
 
-r2, _ := t.AddRow()
+r2 := t.AddRow()
 r2.AddCell(termtable.WithContent("gamma"))
 r2.AddCell(termtable.WithContent("delta"))
 r2.AddCell(termtable.WithContent("omega"))

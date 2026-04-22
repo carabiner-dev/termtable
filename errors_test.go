@@ -12,12 +12,8 @@ import (
 func TestErrorSentinelsWrap(t *testing.T) {
 	cases := []error{
 		ErrSpanConflict,
-		ErrDuplicateID,
-		ErrContentAndReader,
 		ErrReaderAlreadyConsumed,
 		ErrTargetTooNarrow,
-		ErrCellAlreadyAdopted,
-		ErrInvalidSpan,
 		ErrCrossSectionSpan,
 	}
 	for _, sentinel := range cases {

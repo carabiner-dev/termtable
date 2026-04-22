@@ -154,14 +154,14 @@ t := termtable.NewTable(
     termtable.WithTableStyle("border-color: cyan"),
 )
 
-hdr, _ := t.AddHeader(
+hdr := t.AddHeader(
     termtable.WithRowStyle("color: white; background: blue; font-weight: bold"),
 )
 hdr.AddCell(termtable.WithContent("Check"))
 hdr.AddCell(termtable.WithContent("Status"))
 hdr.AddCell(termtable.WithContent("Message"))
 
-r1, _ := t.AddRow()
+r1 := t.AddRow()
 r1.AddCell(termtable.WithContent("OSPS-BR-05"))
 r1.AddCell(termtable.WithContent("PASS"),
     termtable.WithAlign(termtable.AlignCenter),
@@ -170,7 +170,7 @@ r1.AddCell(termtable.WithContent("PASS"),
 )
 r1.AddCell(termtable.WithContent("all good"))
 
-r2, _ := t.AddRow()
+r2 := t.AddRow()
 r2.AddCell(termtable.WithContent("OSPS-DO-02"))
 r2.AddCell(termtable.WithContent("FAIL"),
     termtable.WithAlign(termtable.AlignCenter),

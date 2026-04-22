@@ -11,14 +11,14 @@ vertically within the row.
 t := termtable.NewTable(termtable.WithTargetWidth(40))
 t.Column(1).SetAlign(termtable.AlignCenter)
 
-h, _ := t.AddHeader()
+h := t.AddHeader()
 h.AddCell(termtable.WithContent("Check"))
 h.AddCell(termtable.WithContent("Status")) // inherits column center
 h.AddCell(termtable.WithContent("Notes"),
     termtable.WithAlign(termtable.AlignRight),
 )
 
-r, _ := t.AddRow()
+r := t.AddRow()
 r.AddCell(termtable.WithContent("lookup"))
 r.AddCell(termtable.WithContent("PASS")) // inherits column center
 r.AddCell(

@@ -13,14 +13,13 @@ import (
 // the table each time.
 func renderBasic(t *testing.T, b BorderSet) string {
 	t.Helper()
-	h := th{t}
 	tbl := NewTable(WithTargetWidth(30), WithBorder(b))
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("a")))
-	h.cell(r0.AddCell(WithContent("b")))
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("c")))
-	h.cell(r1.AddCell(WithContent("d")))
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("a"))
+	r0.AddCell(WithContent("b"))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("c"))
+	r1.AddCell(WithContent("d"))
 	return tbl.String()
 }
 
@@ -126,14 +125,13 @@ func TestBorderStyleCSSRoutesToBorderSet(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h := th{t}
 			tbl := NewTable(
 				WithTargetWidth(20),
 				WithTableStyle(tc.decl),
 			)
-			r := h.row(tbl.AddRow())
-			h.cell(r.AddCell(WithContent("x")))
-			h.cell(r.AddCell(WithContent("y")))
+			r := tbl.AddRow()
+			r.AddCell(WithContent("x"))
+			r.AddCell(WithContent("y"))
 			out := tbl.String()
 			if tc.name == noneStyle {
 				lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -151,13 +149,12 @@ func TestBorderStyleCSSRoutesToBorderSet(t *testing.T) {
 
 func TestBorderStyleCSSCoexistsWithOtherStyle(t *testing.T) {
 	forceColor(t)
-	h := th{t}
 	tbl := NewTable(
 		WithTargetWidth(20),
 		WithTableStyle("border-style: double; border-color: cyan"),
 	)
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("x")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("x"))
 
 	out := tbl.String()
 	if !strings.ContainsRune(out, '═') {
@@ -169,13 +166,12 @@ func TestBorderStyleCSSCoexistsWithOtherStyle(t *testing.T) {
 }
 
 func TestBorderStyleCSSUnknownKeywordIgnored(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(
 		WithTargetWidth(20),
 		WithTableStyle("border-style: nonsense"),
 	)
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("x")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("x"))
 
 	// Unknown keyword leaves the default (single-line) set in place.
 	if !strings.ContainsRune(tbl.String(), '┌') {

@@ -3,8 +3,6 @@
 
 package termtable
 
-import "fmt"
-
 // Element is the sealed interface implemented by every addressable object
 // in a table: *Table, *Header, *Footer, *Row, *Cell, *Column. Callers
 // resolve to a concrete type with a type switch.
@@ -22,15 +20,21 @@ func newIDRegistry() *idRegistry {
 	return &idRegistry{m: make(map[string]Element)}
 }
 
-func (r *idRegistry) register(id string, e Element) error {
+// register records the mapping id -> e. Returns true when the id
+// was accepted (either because it was newly inserted, unchanged,
+// or empty — empty IDs are a no-op). Returns false when id is
+// already claimed by a different element; the existing mapping is
+// preserved and the caller is expected to surface a
+// DuplicateIDEvent warning.
+func (r *idRegistry) register(id string, e Element) bool {
 	if id == "" {
-		return nil
+		return true
 	}
 	if existing, ok := r.m[id]; ok && existing != e {
-		return fmt.Errorf("id %q already registered: %w", id, ErrDuplicateID)
+		return false
 	}
 	r.m[id] = e
-	return nil
+	return true
 }
 
 func (r *idRegistry) unregister(id string) {

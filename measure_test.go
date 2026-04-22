@@ -11,12 +11,11 @@ import (
 )
 
 func TestMeasureSingleSpanColumnWidths(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("ab")))          // col 0: min=2, des=2
-	h.cell(r.AddCell(WithContent("hello world"))) // col 1: min=5, des=11
-	h.cell(r.AddCell(WithContent("a\nbcd")))      // col 2: min=3, des=3
+	r := tbl.AddRow()
+	r.AddCell(WithContent("ab"))          // col 0: min=2, des=2
+	r.AddCell(WithContent("hello world")) // col 1: min=5, des=11
+	r.AddCell(WithContent("a\nbcd"))      // col 2: min=3, des=3
 
 	m := Measure(tbl)
 	wantMin := []int{2, 5, 3}
@@ -35,10 +34,9 @@ func TestMeasureSingleSpanColumnWidths(t *testing.T) {
 }
 
 func TestMeasureMultiSpanRecorded(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("banner text here"), WithColSpan(3)))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("banner text here"), WithColSpan(3))
 
 	m := Measure(tbl)
 	// Single-column contributions should be zero — the multi-span
@@ -61,11 +59,10 @@ func TestMeasureMultiSpanRecorded(t *testing.T) {
 }
 
 func TestMeasureConsumesReader(t *testing.T) {
-	h := th{t}
 	const want = "hello"
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	c := h.cell(r.AddCell(WithReader(strings.NewReader(want))))
+	r := tbl.AddRow()
+	c := r.AddCell(WithReader(strings.NewReader(want)))
 
 	Measure(tbl)
 	if !c.resolved {
@@ -84,10 +81,9 @@ type errReader struct{}
 func (errReader) Read([]byte) (int, error) { return 0, errors.New("boom") }
 
 func TestMeasureReaderErrorRecorded(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithReader(errReader{})))
+	r := tbl.AddRow()
+	r.AddCell(WithReader(errReader{}))
 
 	m := Measure(tbl)
 	if len(m.readerErrs) != 1 {
@@ -96,10 +92,9 @@ func TestMeasureReaderErrorRecorded(t *testing.T) {
 }
 
 func TestMeasureReaderContentAvailableForLaterCalls(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	c := h.cell(r.AddCell(WithReader(io.NopCloser(strings.NewReader("cached")))))
+	r := tbl.AddRow()
+	c := r.AddCell(WithReader(io.NopCloser(strings.NewReader("cached"))))
 
 	Measure(tbl)
 	// Calling Measure again should not re-read (reader is drained).
@@ -110,16 +105,15 @@ func TestMeasureReaderContentAvailableForLaterCalls(t *testing.T) {
 }
 
 func TestMeasureWalksAllSections(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	hd := h.header(tbl.AddHeader())
-	h.cell(hd.AddCell(WithContent("H")))
+	hd := tbl.AddHeader()
+	hd.AddCell(WithContent("H"))
 
-	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("B")))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("B"))
 
-	f := h.footer(tbl.AddFooter())
-	h.cell(f.AddCell(WithContent("F")))
+	f := tbl.AddFooter()
+	f.AddCell(WithContent("F"))
 
 	m := Measure(tbl)
 	if len(m.colMin) != 1 {

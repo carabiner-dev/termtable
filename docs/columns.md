@@ -291,6 +291,8 @@ case *termtable.Column:
 }
 ```
 
-IDs are unique across the whole table — collisions return
-`ErrDuplicateID`. Clear a column's ID by passing the empty string;
-reassigning a new ID unregisters the old one first.
+IDs are unique across the whole table — a collision records a
+`DuplicateIDEvent` on `tbl.Warnings()` and the column's ID is left
+empty. `SetID` returns the column so calls can chain. Clear a
+column's ID by passing the empty string; reassigning a new ID
+unregisters the old one first.

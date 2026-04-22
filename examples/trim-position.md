@@ -8,7 +8,7 @@ where the ellipsis lands. `TrimEnd` (default) shows the prefix,
 t := termtable.NewTable(termtable.WithTargetWidth(40))
 t.Column(1).Style("white-space: nowrap")
 
-h, _ := t.AddHeader()
+h := t.AddHeader()
 h.AddCell(termtable.WithContent("Mode"))
 h.AddCell(termtable.WithContent("URL"))
 
@@ -27,7 +27,7 @@ for _, row := range []struct {
     {"middle", termtable.TrimMiddle},
 } {
     for i, u := range urls {
-        r, _ := t.AddRow()
+        r := t.AddRow()
         if i == 0 {
             r.AddCell(
                 termtable.WithContent(row.label),

@@ -12,10 +12,9 @@ import (
 // causes the table to grow to 3 columns and occupies positions 0..2 in
 // its row.
 func TestColSpanClaimsMultipleColumns(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r := h.row(tbl.AddRow())
-	c := h.cell(r.AddCell(WithContent("wide"), WithColSpan(3)))
+	r := tbl.AddRow()
+	c := r.AddCell(WithContent("wide"), WithColSpan(3))
 	if tbl.NumColumns() != 3 {
 		t.Errorf("NumColumns = %d, want 3", tbl.NumColumns())
 	}
@@ -30,33 +29,31 @@ func TestColSpanClaimsMultipleColumns(t *testing.T) {
 // rowspan=2 cell in column 0, the next row's first AddCell lands at
 // column 1 (column 0 is reserved by the rowspan).
 func TestAddCellAdvancesPastReservedRowspan(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("tall"), WithRowSpan(2)))
-	side := h.cell(r0.AddCell(WithContent("side")))
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("tall"), WithRowSpan(2))
+	side := r0.AddCell(WithContent("side"))
 	if side.GridCol() != 1 {
 		t.Errorf("side grid col = %d, want 1", side.GridCol())
 	}
 
-	r1 := h.row(tbl.AddRow())
-	first := h.cell(r1.AddCell(WithContent("below")))
+	r1 := tbl.AddRow()
+	first := r1.AddCell(WithContent("below"))
 	if first.GridCol() != 1 {
 		t.Errorf("below grid col = %d, want 1 (col 0 reserved)", first.GridCol())
 	}
 }
 
-// TestSpanConflictErrors verifies that a rowspan reaching into a row
-// that already has content in the overlapping column triggers
-// ErrSpanConflict.
+// TestSpanConflictErrors verifies that in strict mode
+// (WithSpanOverwrite(false)), a rowspan reaching into a row that
+// already has content returns ErrSpanConflict via the WithError variant.
 func TestSpanConflictErrors(t *testing.T) {
-	h := th{t}
-	tbl := NewTable()
-	r0 := h.row(tbl.AddRow())
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("below"), WithCellID("below")))
+	tbl := NewTable(WithSpanOverwrite(false))
+	r0 := tbl.AddRow()
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("below"), WithCellID("below"))
 	// r0 tries to place a rowspan=2 cell at col 0 — but r1[0] is taken.
-	_, err := r0.AddCell(WithContent("reach"), WithRowSpan(2))
+	_, err := r0.AddCellWithError(WithContent("reach"), WithRowSpan(2))
 	if !errors.Is(err, ErrSpanConflict) {
 		t.Fatalf("expected ErrSpanConflict, got %v", err)
 	}
@@ -65,14 +62,28 @@ func TestSpanConflictErrors(t *testing.T) {
 	}
 }
 
+// TestSpanConflictPanicsInStrictMode verifies the non-error AddCell API
+// panics on span conflict when WithSpanOverwrite(false).
+func TestSpanConflictPanicsInStrictMode(t *testing.T) {
+	tbl := NewTable(WithSpanOverwrite(false))
+	r0 := tbl.AddRow()
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("below"))
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on span conflict in strict mode")
+		}
+	}()
+	r0.AddCell(WithContent("reach"), WithRowSpan(2))
+}
+
 // TestSpanConflictAutoAdvanceWithinRow confirms that within a single
 // row, new cells auto-advance past occupied slots rather than erroring.
 func TestSpanConflictAutoAdvanceWithinRow(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("a"), WithColSpan(3)))
-	c := h.cell(r0.AddCell(WithContent("b")))
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("a"), WithColSpan(3))
+	c := r0.AddCell(WithContent("b"))
 	if c.GridCol() != 3 {
 		t.Errorf("advanced col = %d, want 3", c.GridCol())
 	}
@@ -82,14 +93,13 @@ func TestSpanConflictAutoAdvanceWithinRow(t *testing.T) {
 // WithSpanOverwrite(true), a new cell whose rectangle fully covers an
 // existing cell's anchor removes the victim entirely.
 func TestSpanOverwriteDropsAnchorCovered(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithSpanOverwrite(true))
-	r0 := h.row(tbl.AddRow())
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithCellID("victim"), WithContent("v")))
+	r0 := tbl.AddRow()
+	r1 := tbl.AddRow()
+	r1.AddCell(WithCellID("victim"), WithContent("v"))
 	// r0 cell with rowspan=2 anchored at col 0 — covers (r1, c0),
 	// which is the victim's anchor.
-	h.cell(r0.AddCell(WithContent("over"), WithRowSpan(2)))
+	r0.AddCell(WithContent("over"), WithRowSpan(2))
 	if got := len(r1.Cells()); got != 0 {
 		t.Errorf("victim remained in row, cells=%d", got)
 	}
@@ -124,19 +134,18 @@ func TestSpanOverwriteDropsAnchorCovered(t *testing.T) {
 // That intersects vic at (2, 1). Vic's anchor (2, 0) lies outside D's
 // rectangle, so truncation applies: vic's colSpan drops from 2 to 1.
 func TestSpanOverwriteTruncatesPartial(t *testing.T) {
-	h := th{t}
 	tbl := NewTable(WithSpanOverwrite(true))
-	r0 := h.row(tbl.AddRow())
-	h.cell(r0.AddCell(WithContent("A")))
-	r1 := h.row(tbl.AddRow())
-	h.cell(r1.AddCell(WithContent("B")))
-	r2 := h.row(tbl.AddRow())
-	vic := h.cell(r2.AddCell(
+	r0 := tbl.AddRow()
+	r0.AddCell(WithContent("A"))
+	r1 := tbl.AddRow()
+	r1.AddCell(WithContent("B"))
+	r2 := tbl.AddRow()
+	vic := r2.AddCell(
 		WithCellID("vic"), WithContent("V"),
 		WithColSpan(2), WithRowSpan(2),
-	))
+	)
 
-	h.cell(r0.AddCell(WithContent("D"), WithColSpan(2), WithRowSpan(3)))
+	r0.AddCell(WithContent("D"), WithColSpan(2), WithRowSpan(3))
 
 	if vic.ColSpan() != 1 {
 		t.Errorf("vic colSpan = %d, want 1", vic.ColSpan())
@@ -166,10 +175,9 @@ func TestSpanOverwriteTruncatesPartial(t *testing.T) {
 // TestRowSpanReservesAcrossRows verifies the occupancy grid grows to
 // cover a rowspan even when subsequent rows haven't been added yet.
 func TestRowSpanReservesAcrossRows(t *testing.T) {
-	h := th{t}
 	tbl := NewTable()
-	r0 := h.row(tbl.AddRow())
-	c := h.cell(r0.AddCell(WithContent("tall"), WithRowSpan(3)))
+	r0 := tbl.AddRow()
+	c := r0.AddCell(WithContent("tall"), WithRowSpan(3))
 	if tbl.bodyOcc.at(2, 0) != c {
 		t.Error("rowspan should reserve row 2 col 0")
 	}
