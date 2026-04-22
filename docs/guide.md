@@ -258,44 +258,60 @@ Two entry points:
 
 ### Target width resolution
 
-`tbl.ResolvedTargetWidth()` picks the layout budget from:
+Width resolution follows CSS table semantics: the table has an
+**intrinsic** width from its content, and three optional bounds —
+`width`, `min-width`, `max-width` — that constrain it.
 
-1. an explicit `WithTargetWidth(n)`;
-2. else `WithTargetWidthPercent(p)` — `p`% of the attached terminal,
-   falling back to `COLUMNS`, then `80`, as the base when no TTY is
-   detected;
-3. else the `COLUMNS` environment variable, if it parses to a
-   positive int;
-4. else the `80`-column default.
+**Defaults** (applied only when the corresponding option is unset):
 
-`WithTargetWidth` and `WithTargetWidthPercent` are mutually
-exclusive — whichever is set last on the table wins. CSS accepts
-the same pair through a single `width` declaration:
+- `min-width: 80` — the table never renders narrower than 80 columns
+  unless the screen itself can't fit 80.
+- `max-width: 90%` — the table never exceeds 90 % of the attached
+  screen; content beyond that wraps or clips inside cells.
+
+**Pinning an exact size** — `WithTargetWidth(n)` /
+`WithTargetWidthPercent(p)` / `width: N | N%` — pins the layout to
+that target; the content-intrinsic width is ignored. Default
+bounds do **not** clamp an explicit target. Explicit bounds
+(`WithMinWidth`, `WithMaxWidth`, `min-width`, `max-width` in CSS)
+still apply on top.
+
+**No pin** — the layout picks the content-intrinsic width and
+clamps it into `[min-width, max-width]`.
+
+**Screen cap** — whatever value the resolver produces is clamped
+to the attached terminal's width (stdout or stderr, via
+`golang.org/x/term`). Pipes and other non-interactive sinks leave
+the value uncapped.
+
+| Setup                                             | Result        |
+|:--------------------------------------------------|:--------------|
+| No options, short content, 200-col terminal       | `80` (min)    |
+| No options, medium content (~70 wide), 200 TTY    | natural (≤ max) |
+| No options, long content, 200-col terminal        | `180` (max)   |
+| No options, 85-col terminal                       | `80` (floor)  |
+| No options, 40-col terminal                       | `40` (capped) |
+| `WithTargetWidth(200)`, 80-col terminal           | `80` (TTY)    |
+| `WithTargetWidth(40)`, 120-col terminal           | `40`          |
+| `WithTargetWidth(50)`, 200-col terminal           | `50` (explicit ignores default min) |
+| `WithTargetWidth(120) + WithMaxWidth(90)`         | `90`          |
+| `WithMinWidth(100)`, short content                | `100`         |
+| `WithMaxWidth(50)`, long content                  | `50`          |
+| `WithTableStyle("width: 80%")`, 100 TTY           | `80`          |
+| `WithTableStyle("min-width: 60; max-width: 50%")` | clamped into `[60, 0.5 × screen]` |
+
+**CSS grammar**. All three bounds accept absolute or percent
+values, and the last declaration on the table wins:
 
 ```go
-termtable.WithTableStyle("width: 80%")   // percent form
-termtable.WithTableStyle("width: 120")   // absolute form
+termtable.WithTableStyle("width: 120")
+termtable.WithTableStyle("min-width: 40; max-width: 75%")
+termtable.WithTableStyle("width: 80%")   // last; overrides prior width
 ```
 
-The last `width` declaration parsed wins, even across forms (e.g.
-`"width: 30; width: 50%"` ends up as 50%).
-
-The chosen value is then **clamped to the attached terminal** when
-one is detected (stdout or stderr, via `golang.org/x/term`), so
-output never exceeds the physical screen. Pipes and other
-non-interactive sinks leave the value uncapped.
-
-| Setup                                           | Result        |
-|:------------------------------------------------|:--------------|
-| No options, 120-col terminal                    | `80`          |
-| No options, 40-col terminal                     | `40` (capped) |
-| `WithTargetWidth(200)`, 80-col terminal         | `80` (capped) |
-| `WithTargetWidth(40)`, 120-col terminal         | `40`          |
-| `WithTargetWidth(500)`, writing to a pipe       | `500`         |
-| `WithTargetWidthPercent(50)`, 100-col terminal  | `50`          |
-| `WithTargetWidthPercent(150)`, 80-col terminal  | `80` (capped) |
-| `WithTargetWidthPercent(50)`, pipe, COLUMNS=120 | `60`          |
-| No options, piped output, no `COLUMNS`          | `80`          |
+`WithTargetWidth` and `WithTargetWidthPercent` (and the `width:`
+declaration) are mutually exclusive — whichever is set last wins.
+The same holds for the min/max pairs.
 
 Both call the same three-pass pipeline:
 

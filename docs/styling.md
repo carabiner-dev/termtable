@@ -79,7 +79,9 @@ t.Column(2).SetAlign(termtable.AlignRight).Style("color: yellow")
 | `background`        | name / `#rrggbb` / `rgb(r,g,b)`               | Alias: `background-color`.                                  |
 | `border-color`      | name / `#rrggbb` / `rgb(r,g,b)`               | Table-level only — ignored on rows, columns, and cells.     |
 | `border-style`      | `single` \| `double` \| `heavy` \| `rounded` \| `ascii` \| `none` | Table-level only. See [borders.md](borders.md).              |
-| `width`             | `N` \| `N%`                                   | Table-level only. Layout target width — absolute or a percentage of the terminal/`COLUMNS`/80. Equivalent to `WithTargetWidth` / `WithTargetWidthPercent`. |
+| `width`             | `N` \| `N%`                                   | Table-level only. Pins the layout target — absolute or a percentage of the screen. Equivalent to `WithTargetWidth` / `WithTargetWidthPercent`. |
+| `min-width`         | `N` \| `N%`                                   | Table-level only. Floor for the layout target. Default: `80`. Equivalent to `WithMinWidth` / `WithMinWidthPercent`. |
+| `max-width`         | `N` \| `N%`                                   | Table-level only. Ceiling for the layout target. Default: `90%`. Equivalent to `WithMaxWidth` / `WithMaxWidthPercent`. |
 | `font-weight`       | `bold` \| `normal`                            | Bold is the SGR bold attribute (code 1).                    |
 | `font-style`        | `italic` \| `normal`                          | Some terminals don't render italics.                        |
 | `text-decoration`   | `underline` \| `line-through` \| `none`       | Multiple values combinable: `underline line-through`.       |
@@ -240,6 +242,7 @@ width modes and terminal-detection rules.
 - **Content inside a suppressed rowspan border** uses the cell's own
   style, not the table border colour. This is deliberate — the
   content is semantically still the cell's.
-- **`width`** applies only at the table level. Column sizing lives
-  in `Column.Style` with its own `width` / `min-width` /
-  `max-width` / `flex` grammar — see [columns.md](columns.md).
+- **`width` / `min-width` / `max-width`** apply only at the table
+  level. Column sizing lives in `Column.Style` with its own
+  `width` / `min-width` / `max-width` / `flex` grammar — see
+  [columns.md](columns.md).
