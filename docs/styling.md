@@ -83,6 +83,7 @@ t.Column(2).SetAlign(termtable.AlignRight).Style("color: yellow")
 | `font-style`        | `italic` \| `normal`                          | Some terminals don't render italics.                        |
 | `text-decoration`   | `underline` \| `line-through` \| `none`       | Multiple values combinable: `underline line-through`.       |
 | `text-align`        | `left` \| `center` \| `right`                 | Works at any level; defaults to `left`.                     |
+| `vertical-align`    | `top` \| `middle` \| `bottom`                 | Where content sits when its row is taller than its height.  |
 
 Column CSS additionally accepts the sizing properties documented in
 [columns.md](columns.md). Everything else the parser doesn't

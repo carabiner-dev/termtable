@@ -47,7 +47,8 @@ The upshot:
 | `SetMin(n)`           | `min-width: n`          | Floor — combined with content minimum via `max`.     |
 | `SetMax(n)`           | `max-width: n`          | Cap — content wraps when it would exceed.            |
 | `SetWeight(w)`        | `flex: w`               | Share of leftover budget.                            |
-| `SetAlign(a)`         | `text-align: left\|center\|right` | Default alignment for cells in the column. |
+| `SetAlign(a)`         | `text-align: left\|center\|right` | Default horizontal alignment for cells in the column. |
+| `SetVAlign(v)`        | `vertical-align: top\|middle\|bottom` | Default vertical alignment for cells in the column.   |
 | `SetID(id)`           | —                       | Register the column with `Table.GetElementByID`.     |
 
 CSS also forwards the style-only properties (`color`, `background`,
@@ -189,6 +190,47 @@ t.Column(1).SetWidth(8).SetAlign(termtable.AlignCenter)
 ├────────────────────────┼──────────┼──────────────────────┤
 │ OSPS-DO-02             │   FAIL   │ needs attention soon │
 └────────────────────────┴──────────┴──────────────────────┘
+```
+
+### Vertical alignment — `SetVAlign` / `vertical-align`
+
+When a row is taller than a cell's own wrapped content (commonly
+because a neighbour wrapped to more lines), the cell's content sits
+at the top by default. `SetVAlign` places it middle or bottom;
+cascade works the same way as horizontal alignment.
+
+```go
+t.Column(0).SetVAlign(termtable.VAlignMiddle) // or VAlignBottom / VAlignTop
+```
+
+Top (default):
+
+```
+┌──────────────────┬───────────────────┐
+│ short            │ this is a much    │
+│                  │ longer message    │
+│                  │ that must wrap    │
+└──────────────────┴───────────────────┘
+```
+
+Middle:
+
+```
+┌──────────────────┬───────────────────┐
+│                  │ this is a much    │
+│ short            │ longer message    │
+│                  │ that must wrap    │
+└──────────────────┴───────────────────┘
+```
+
+Bottom:
+
+```
+┌──────────────────┬───────────────────┐
+│                  │ this is a much    │
+│                  │ longer message    │
+│ short            │ that must wrap    │
+└──────────────────┴───────────────────┘
 ```
 
 ### CSS combination
