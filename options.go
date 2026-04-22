@@ -62,6 +62,18 @@ func WithTablePadding(p Padding) TableOption {
 	return func(t *Table) { t.opts.padding = p }
 }
 
+// WithEmojiWidth pins the emoji-width counting mode for the table.
+// The default (EmojiWidthAuto) picks EmojiWidthConservative unless
+// termtable detects a terminal known to render composite emoji
+// correctly, in which case it picks EmojiWidthGrapheme. The
+// TERMTABLE_EMOJI_WIDTH environment variable overrides the
+// detection; an explicit non-auto value here overrides both.
+//
+// See EmojiWidthMode for the semantics.
+func WithEmojiWidth(mode EmojiWidthMode) TableOption {
+	return func(t *Table) { t.opts.emojiWidth = mode }
+}
+
 // WithTableStyle sets table-wide style defaults via a CSS-like
 // declaration block, e.g.
 //

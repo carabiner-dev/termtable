@@ -9,27 +9,29 @@ import "strings"
 // is created fresh for each call to Table.String / Table.WriteTo so
 // multiple renders of the same table are independent.
 type renderContext struct {
-	t      *Table
-	layout *layoutResult
-	border BorderSet
-	nCols  int
-	nRows  int
-	padL   int
-	padR   int
-	seam   int
+	t          *Table
+	layout     *layoutResult
+	border     BorderSet
+	nCols      int
+	nRows      int
+	padL       int
+	padR       int
+	seam       int
+	emojiWidth EmojiWidthMode
 }
 
 func newRenderContext(t *Table, l *layoutResult, b BorderSet) *renderContext {
 	geom := tableGeometry(t)
 	return &renderContext{
-		t:      t,
-		layout: l,
-		border: b,
-		nCols:  t.NumColumns(),
-		nRows:  t.NumRows(),
-		padL:   t.opts.padding.Left,
-		padR:   t.opts.padding.Right,
-		seam:   geom.seam,
+		t:          t,
+		layout:     l,
+		border:     b,
+		nCols:      t.NumColumns(),
+		nRows:      t.NumRows(),
+		padL:       t.opts.padding.Left,
+		padR:       t.opts.padding.Right,
+		seam:       geom.seam,
+		emojiWidth: t.resolveEmojiWidth(),
 	}
 }
 
@@ -133,27 +135,33 @@ func (rc *renderContext) junctionArms(r, c int) int {
 // sub-line.
 func (rc *renderContext) borderLine(r int) string {
 	var b strings.Builder
-	for c := 0; c <= rc.nCols; c++ {
-		glyph := rc.border.Joins[rc.junctionArms(r, c)]
-		if glyph == 0 {
-			glyph = ' '
-		}
-		b.WriteString(rc.styleBorder(string(glyph)))
-		if c == rc.nCols {
-			break
-		}
+	rc.writeJunction(&b, r, 0)
+	c := 0
+	for c < rc.nCols {
 		if rc.isBorderSuppressedH(r, c) {
-			// Suppressed by a rowspan: emit the cell's content at the
-			// appropriate sub-line. Cell styling (not border color)
-			// governs this slot.
+			// Suppressed by a rowspan: emit the cell's content once
+			// over its full colspan (the writeCellSlice output covers
+			// any internal seams). Advance past the cell so we don't
+			// re-emit at continuation columns.
 			cell := rc.t.CellAt(r, c)
 			rc.writeCellSlice(&b, cell, rc.cellSubLineAtBorder(cell, r))
+			c += cell.colSpan
 		} else {
 			w := rc.columnCellWidth(c)
 			b.WriteString(rc.styleBorder(strings.Repeat(string(rc.border.Horizontal), w)))
+			c++
 		}
+		rc.writeJunction(&b, r, c)
 	}
 	return b.String()
+}
+
+func (rc *renderContext) writeJunction(b *strings.Builder, r, c int) {
+	glyph := rc.border.Joins[rc.junctionArms(r, c)]
+	if glyph == 0 {
+		glyph = ' '
+	}
+	b.WriteString(rc.styleBorder(string(glyph)))
 }
 
 // styleBorder wraps s with the table-level border color when one is
@@ -233,7 +241,7 @@ func (rc *renderContext) writeCellSlice(b *strings.Builder, cell *Cell, subLine 
 	if idx >= 0 && idx < h {
 		line = lines[idx]
 	}
-	slot.WriteString(alignText(line, rc.cellContentWidth(cell), rc.effectiveCellAlign(cell)))
+	slot.WriteString(alignText(line, rc.cellContentWidth(cell), rc.effectiveCellAlign(cell), rc.emojiWidth))
 	slot.WriteString(strings.Repeat(" ", rc.padR))
 
 	style := rc.effectiveCellStyle(cell)
@@ -319,12 +327,14 @@ func (rc *renderContext) cellSubLineAtContent(cell *Cell, r, s int) int {
 	return sum + (r - a) + s
 }
 
-// alignText pads s (whose visible width is DisplayWidth(s)) to the
-// given width using ASCII spaces according to the alignment. When the
-// visible content already meets or exceeds width, s is returned
-// unchanged — rendered output may overflow its slot in that case.
-func alignText(s string, width int, align Alignment) string {
-	vw := DisplayWidth(s)
+// alignText pads s to the given width using ASCII spaces according
+// to the alignment. The mode controls how composite emoji widths
+// are counted — the renderer passes its resolved EmojiWidthMode so
+// padding math matches layout math. When the visible content
+// already meets or exceeds width, s is returned unchanged — rendered
+// output may overflow its slot in that case.
+func alignText(s string, width int, align Alignment, mode EmojiWidthMode) string {
+	vw := displayWidthFor(s, mode)
 	if vw >= width {
 		return s
 	}

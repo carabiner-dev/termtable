@@ -3,6 +3,11 @@
 
 package termtable
 
+// unknownName is returned by String methods for enum values outside
+// the documented range. Kept as a package-level constant so adding
+// new enums doesn't require remembering the exact spelling.
+const unknownName = "unknown"
+
 // Alignment controls horizontal placement of wrapped cell content within
 // its allotted width.
 type Alignment uint8
@@ -27,7 +32,7 @@ func (a Alignment) String() string {
 	case AlignRight:
 		return "right"
 	default:
-		return "unknown"
+		return unknownName
 	}
 }
 
@@ -58,6 +63,6 @@ func (v VerticalAlignment) String() string {
 	case VAlignBottom:
 		return "bottom"
 	default:
-		return "unknown"
+		return unknownName
 	}
 }

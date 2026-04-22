@@ -59,6 +59,7 @@ type tableOptions struct {
 	targetWidthSet bool
 	border         BorderSet
 	padding        Padding
+	emojiWidth     EmojiWidthMode
 	spanOverwrite  bool
 }
 

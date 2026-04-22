@@ -50,13 +50,14 @@ func Measure(t *Table) *measureResult {
 		colMin:     make([]int, nCols),
 		colDesired: make([]int, nCols),
 	}
+	mode := t.resolveEmojiWidth()
 	visit := func(c *Cell) {
 		content, err := resolveCellContent(c)
 		if err != nil {
 			out.readerErrs = append(out.readerErrs, readerErr{cellID: c.id, err: err})
 		}
-		minW := MinUnbreakableWidth(content)
-		desW := maxLineWidth(content)
+		minW := minUnbreakableWidthFor(content, mode)
+		desW := maxLineWidthFor(content, mode)
 		if c.colSpan == 1 {
 			if minW > out.colMin[c.gridCol] {
 				out.colMin[c.gridCol] = minW
@@ -116,12 +117,13 @@ func resolveCellContent(c *Cell) (string, error) {
 	return c.content, nil
 }
 
-// maxLineWidth returns the display width of the widest natural line in
-// s. "Natural" here means separated by '\n'; CRLF is handled by
+// maxLineWidthFor returns the display width of the widest natural
+// line in s, with grapheme widths computed under the supplied mode.
+// "Natural" here means separated by '\n'; CRLF is handled by
 // NaturalLines. The widest line dictates the column width needed to
 // render the content without wrapping.
-func maxLineWidth(s string) int {
-	lines := NaturalLines(s)
+func maxLineWidthFor(s string, mode EmojiWidthMode) int {
+	lines := naturalLinesFor(s, mode)
 	var maxW int
 	for _, line := range lines {
 		w := 0

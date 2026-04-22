@@ -92,21 +92,17 @@ func TestGoldenSpanNested(t *testing.T) {
 }
 
 // TestGoldenUnicodeMix locks a table containing CJK, hiragana, and
-// wide emoji alongside ASCII — the grid must stay aligned across
-// mixed widths.
-//
-// Note: we deliberately use single-codepoint emoji (each rendered
-// as width 2 everywhere) rather than ZWJ sequences like 👨‍👩‍👧. Per
-// Unicode the whole family is one grapheme cluster of width 2 and
-// uniseg reports that correctly, but terminals without ZWJ
-// ligature support (some SSH contexts, tmux/screen with a
-// no-emoji font, certain Windows setups) render the family as its
-// three constituent emojis at width 6. termtable sides with the
-// Unicode reading; keeping the fixture portable is a separate
-// concern from validating the width math.
+// a ZWJ emoji family alongside ASCII. The test pins the table to
+// EmojiWidthConservative so output stays byte-identical regardless
+// of the runner's terminal detection — and the fixture stays
+// visually aligned on every terminal, including ones without ZWJ
+// ligature support.
 func TestGoldenUnicodeMix(t *testing.T) {
 	h := th{t}
-	tbl := NewTable(WithTargetWidth(40))
+	tbl := NewTable(
+		WithTargetWidth(40),
+		WithEmojiWidth(EmojiWidthConservative),
+	)
 
 	hdr := h.header(tbl.AddHeader())
 	h.cell(hdr.AddCell(WithContent("Name")))
@@ -121,7 +117,7 @@ func TestGoldenUnicodeMix(t *testing.T) {
 	r2 := h.row(tbl.AddRow())
 	h.cell(r2.AddCell(WithContent("more")))
 	h.cell(r2.AddCell(WithContent("こんにちは")))
-	h.cell(r2.AddCell(WithContent("🎉📦")))
+	h.cell(r2.AddCell(WithContent("👨‍👩‍👧")))
 
 	assertGolden(t, "unicode_mix.golden", tbl.String())
 }

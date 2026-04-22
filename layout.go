@@ -415,6 +415,7 @@ func computeRowHeights(t *Table, assigned []int, wrapped map[*Cell][]string) []i
 	totalRows := len(t.headers) + len(t.rows) + len(t.footers)
 	heights := make([]int, totalRows)
 	geom := tableGeometry(t)
+	mode := t.resolveEmojiWidth()
 
 	wrapCell := func(c *Cell) []string {
 		w := contentSum(assigned, c.gridCol, c.colSpan) + (c.colSpan-1)*geom.seam
@@ -427,7 +428,7 @@ func computeRowHeights(t *Table, assigned []int, wrapped map[*Cell][]string) []i
 			// here we just fall back to whatever bytes were buffered.
 			text = c.content
 		}
-		return Wrap(NaturalLines(text), w, c.opts.wrap, c.opts.trim, c.opts.maxLines)
+		return Wrap(naturalLinesFor(text, mode), w, c.opts.wrap, c.opts.trim, c.opts.maxLines)
 	}
 
 	headerOffset := 0

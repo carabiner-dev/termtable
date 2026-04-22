@@ -218,6 +218,12 @@ Phase 4 fidelity is "reduced": colour survives line breaks via a
 state-re-emit + reset strategy, and outer-plus-inner composition is
 not perfect. A full SGR state machine is deferred.
 
+## See also
+
+Composite emoji (ZWJ families, flags, skin-tone modifiers) have
+their own documentation page — see [emoji.md](emoji.md) for the
+width modes and terminal-detection rules.
+
 ## Where styling doesn't apply
 
 - **Border glyphs** are coloured via table-level `border-color` only.
