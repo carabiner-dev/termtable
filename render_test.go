@@ -171,11 +171,14 @@ func TestRenderEmojiKeepsGridAligned(t *testing.T) {
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	target := DisplayWidth(lines[0])
+	// Measure with the renderer's effective emoji mode — Conservative
+	// pads composite clusters wider than Grapheme, and alignment is
+	// defined relative to whichever mode produced the layout.
+	mode := tbl.resolveEmojiWidth()
+	target := displayWidthFor(lines[0], mode)
 	for i, ln := range lines {
-		if DisplayWidth(ln) != target {
-			t.Errorf("line %d width %d, want %d: %q",
-				i, DisplayWidth(ln), target, ln)
+		if got := displayWidthFor(ln, mode); got != target {
+			t.Errorf("line %d width %d, want %d: %q", i, got, target, ln)
 		}
 	}
 }
@@ -205,9 +208,11 @@ func TestRenderPreservesANSI(t *testing.T) {
 }
 
 func TestWriteToReturnsLayoutError(t *testing.T) {
-	tbl := NewTable(WithTargetWidth(10))
+	// Overhead for 2 cols is (2+1) + 2*2 = 7. Target=7 leaves 0
+	// content cols — genuinely pathological.
+	tbl := NewTable(WithTargetWidth(7))
 	r := tbl.AddRow()
-	r.AddCell(WithContent("loooooooongword")) // min > available
+	r.AddCell(WithContent("loooooooongword"))
 	r.AddCell(WithContent("anotheroneeeee"))
 
 	var buf bytes.Buffer

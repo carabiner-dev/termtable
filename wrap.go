@@ -192,12 +192,21 @@ func lineDisplayWidth(runs []GraphemeRun) int {
 	return w
 }
 
-// clipToTerminalWidth clips every overwide line in s to maxWidth,
-// replacing the dropped tail with an ellipsis so the truncation is
-// visible. Lines that already fit are returned verbatim; ANSI escape
-// state is preserved for the kept prefix and closed with a reset.
-// Widths are measured under mode so the result matches the table's
-// emoji-width policy. Non-positive maxWidth is a no-op.
+// clipToTerminalWidth clips every overwide line in s to maxWidth.
+// Lines that fit pass through unchanged. Lines that overflow are
+// shortened with these rules:
+//
+//   - The trailing border glyph (│, ┐, ┘, ┤, ┬, ┴, ┼, …) is always
+//     preserved — borders must never be replaced by an ellipsis.
+//   - For content rows, the cell content before the border gets the
+//     ellipsis so the clip looks like  `│ content… │`.
+//   - For border-only rows (top, bottom, separators) the interior is
+//     truncated without inserting an ellipsis — there's no cell
+//     content to mark.
+//
+// ANSI escape state is preserved for the kept prefix and closed with
+// a reset. Widths are measured under mode so the result matches the
+// table's emoji-width policy. Non-positive maxWidth is a no-op.
 func clipToTerminalWidth(s string, maxWidth int, mode EmojiWidthMode) string {
 	if maxWidth <= 0 {
 		return s
@@ -208,15 +217,98 @@ func clipToTerminalWidth(s string, maxWidth int, mode EmojiWidthMode) string {
 		if displayWidthFor(ln, mode) <= maxWidth {
 			continue
 		}
-		runs := graphemeRunsOf(ln, mode)
-		kept := clipEnd(runs, maxWidth, true)
-		lines[i] = renderOutputLine(outputLine{runs: kept})
+		lines[i] = clipLinePreservingBorders(ln, maxWidth, mode)
 		changed = true
 	}
 	if !changed {
 		return s
 	}
 	return strings.Join(lines, "\n")
+}
+
+func clipLinePreservingBorders(ln string, maxWidth int, mode EmojiWidthMode) string {
+	runs := graphemeRunsOf(ln, mode)
+	if len(runs) == 0 {
+		return ln
+	}
+
+	// Peel off the trailing border glyph, if any, and reserve its
+	// width. If the whole line is border glyphs we keep the trailing
+	// glyph; the interior is clipped without an ellipsis.
+	tail := runs[len(runs)-1]
+	body := runs
+	reserved := 0
+	if isBorderGlyph(tail.Text) {
+		body = runs[:len(runs)-1]
+		reserved = tail.Width
+	} else {
+		tail = GraphemeRun{}
+	}
+
+	contentWidth := maxWidth - reserved
+	if contentWidth < 0 {
+		contentWidth = 0
+	}
+
+	var kept []GraphemeRun
+	if isBorderOnly(body) {
+		// No cell content to mark — silent truncation.
+		kept = clipHeadToWidth(body, contentWidth)
+	} else {
+		kept = clipEnd(body, contentWidth, true)
+	}
+	out := renderOutputLine(outputLine{runs: kept})
+	if reserved > 0 {
+		// Re-emit any ANSI prefix attached to the preserved border
+		// glyph so its colour survives the clip.
+		if tail.EscPrefix != "" {
+			out += tail.EscPrefix + tail.Text + "\x1b[0m"
+		} else {
+			out += tail.Text
+		}
+	}
+	return out
+}
+
+// isBorderGlyph reports whether g is a single grapheme made of
+// box-drawing or block-element characters that termtable uses for
+// table frames.
+func isBorderGlyph(g string) bool {
+	if g == "" {
+		return false
+	}
+	for _, r := range g {
+		if !isBorderRune(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// isBorderOnly reports whether every visible grapheme in runs is a
+// border glyph.
+func isBorderOnly(runs []GraphemeRun) bool {
+	for _, r := range runs {
+		if !isBorderGlyph(r.Text) {
+			return false
+		}
+	}
+	return true
+}
+
+// isBorderRune covers the Unicode box-drawing block (U+2500..U+257F)
+// plus the few block-element glyphs termtable occasionally emits.
+// Spaces count so padded border rows still read as "border-only".
+func isBorderRune(r rune) bool {
+	switch {
+	case r >= 0x2500 && r <= 0x257F: // Box Drawing
+		return true
+	case r >= 0x2580 && r <= 0x259F: // Block Elements
+		return true
+	case r == ' ':
+		return true
+	}
+	return false
 }
 
 // ellipsizeLine decorates the final kept line of a line-clamped

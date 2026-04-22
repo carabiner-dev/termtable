@@ -81,16 +81,96 @@ func TestLayoutMinFloorTriggered(t *testing.T) {
 	}
 }
 
-func TestLayoutTooNarrowErrors(t *testing.T) {
+// TestLayoutTooNarrowNoRoomPerColumn verifies that
+// ErrTargetTooNarrow fires only when the budget cannot give every
+// column at least one glyph of content space. Overhead for 4 cols is
+// (4+1) + 4*2 = 13, so target=15 leaves 2 content cols for 4 columns
+// — genuinely pathological.
+func TestLayoutTooNarrowNoRoomPerColumn(t *testing.T) {
+	tbl := NewTable(WithTargetWidth(15))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+	r.AddCell(WithContent("c"))
+	r.AddCell(WithContent("d"))
+
+	l := Layout(tbl, Measure(tbl))
+	if !errors.Is(l.err, ErrTargetTooNarrow) {
+		t.Fatalf("expected ErrTargetTooNarrow, got %v", l.err)
+	}
+}
+
+// TestLayoutShrinksBelowMinimumSilently verifies that when content
+// minimums exceed the target but every column can still be given at
+// least one glyph, the layout silently shrinks — no error. Content
+// clipping happens inside cells via the normal wrap path.
+func TestLayoutShrinksBelowMinimumSilently(t *testing.T) {
 	tbl := NewTable(WithTargetWidth(12))
 	r := tbl.AddRow()
 	r.AddCell(WithContent("longwordone"))
 	r.AddCell(WithContent("longwordtwo"))
 
 	l := Layout(tbl, Measure(tbl))
-	if !errors.Is(l.err, ErrTargetTooNarrow) {
-		t.Fatalf("expected ErrTargetTooNarrow, got %v", l.err)
+	if l.err != nil {
+		t.Fatalf("expected no error for silent shrink, got %v", l.err)
 	}
+}
+
+// TestLayoutTooNarrowHardFitsToTarget verifies that when content
+// minimums exceed the target, the layout still fits within the target
+// by shrinking each column below its natural minimum (cells will clip
+// their content with an ellipsis). The rendered width must equal the
+// target — borders never spill outside it. No error is raised since
+// every column still gets at least one glyph.
+func TestLayoutTooNarrowHardFitsToTarget(t *testing.T) {
+	tbl := NewTable(WithTargetWidth(20))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("longwordonelongwordone"))
+	r.AddCell(WithContent("longwordtwolongwordtwo"))
+
+	l := Layout(tbl, Measure(tbl))
+	if l.err != nil {
+		t.Fatalf("expected no error (every column fits one glyph): %v", l.err)
+	}
+	// overhead for 2 cols: (2+1) + 2*2 = 7 → available = 13
+	available := 20 - layoutOverheadCols(2)
+	total := 0
+	for _, v := range l.colAssigned {
+		total += v
+	}
+	if total != available {
+		t.Errorf("colAssigned sum = %d, want %d (hard-fit to available)", total, available)
+	}
+	for i, v := range l.colAssigned {
+		if v < 1 {
+			t.Errorf("colAssigned[%d] = %d, want >= 1 (every column keeps a glyph)", i, v)
+		}
+	}
+
+	// End-to-end: every rendered line is exactly the target width.
+	out := tbl.String()
+	for i, ln := range splitLines(out) {
+		if w := DisplayWidth(ln); w != 20 {
+			t.Errorf("line %d width = %d, want 20: %q", i, w, ln)
+		}
+	}
+}
+
+func splitLines(s string) []string {
+	var out []string
+	curr := ""
+	for _, ch := range s {
+		if ch == '\n' {
+			out = append(out, curr)
+			curr = ""
+			continue
+		}
+		curr += string(ch)
+	}
+	if curr != "" {
+		out = append(out, curr)
+	}
+	return out
 }
 
 func TestLayoutMultiSpanConstraintBorrows(t *testing.T) {

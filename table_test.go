@@ -248,6 +248,53 @@ func TestRenderNeverExceedsTTYWidth(t *testing.T) {
 	}
 }
 
+// TestRenderBordersNeverGetEllipsisOnClip verifies the user-facing
+// invariant: when the rendered output must be clipped to a narrower
+// TTY than the layout produced, border glyphs survive intact. Only
+// cell content shows an ellipsis; the top/bottom/separator rows are
+// clipped silently (no ellipsis on pure box-drawing rows).
+func TestRenderBordersNeverGetEllipsisOnClip(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+
+	// Simulate a pathological case: layout can't fit even one glyph
+	// per column (4 cols + overhead 9 > 10), so the rendered output
+	// still exceeds the TTY after the hard-fit pass. The TTY post
+	// clip must preserve borders.
+	withFakeTTY(t, 10, true)
+
+	tbl := NewTable()
+	r := tbl.AddRow()
+	r.AddCell(WithContent("aaaaa"))
+	r.AddCell(WithContent("bbbbb"))
+	r.AddCell(WithContent("ccccc"))
+	r.AddCell(WithContent("ddddd"))
+
+	out := tbl.String()
+	for i, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if ln == "" {
+			continue
+		}
+		// Every rendered row must end in a border glyph, never in "…".
+		if strings.HasSuffix(ln, "…") {
+			t.Errorf("line %d ends in ellipsis (border clipped): %q", i, ln)
+		}
+		// Top/bottom/separator rows contain only box-drawing glyphs —
+		// an ellipsis must never appear inside them.
+		if isBorderOnly(graphemeRunsOf(ln, EmojiWidthGrapheme)) {
+			continue
+		}
+		// For content rows, if clipping happened the last printable
+		// glyph must be a border.
+		last := []rune(strings.TrimRight(ln, ""))
+		if len(last) > 0 {
+			r := last[len(last)-1]
+			if !isBorderRune(r) {
+				t.Errorf("content line %d does not end in a border glyph: %q", i, ln)
+			}
+		}
+	}
+}
+
 // TestResolvedTargetWidthPercentOfTTY verifies that a percentage is
 // computed against the detected terminal width.
 func TestResolvedTargetWidthPercentOfTTY(t *testing.T) {
@@ -371,27 +418,25 @@ func TestResolvedTargetWidthPercentAndAbsoluteMutex(t *testing.T) {
 	}
 }
 
-// TestRenderNoClipToPipe verifies that non-interactive sinks (pipes,
-// files) are not clipped — the user said those are free to overflow.
-func TestRenderNoClipToPipe(t *testing.T) {
+// TestRenderPipeHonoursExplicitWidth verifies that a large explicit
+// WithTargetWidth is used verbatim in pipe mode — no TTY cap applies,
+// so the table renders at the requested width with room to breathe.
+func TestRenderPipeHonoursExplicitWidth(t *testing.T) {
 	t.Setenv("COLUMNS", "")
 	withFakeTTY(t, 0, false)
 
-	tbl := NewTable(WithTargetWidth(10))
+	tbl := NewTable(WithTargetWidth(200))
 	r := tbl.AddRow()
-	r.AddCell(WithContent("averylongwordthatexceedsthescreen"))
+	r.AddCell(WithContent("short"))
+	r.AddCell(WithContent("also short"))
 
 	out := tbl.String()
-	// The overflow render is wider than 10 — confirm no clip happened.
-	// At least one line must exceed the target width.
-	var widest int
-	for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		if w := DisplayWidth(ln); w > widest {
-			widest = w
+	// Every line should be exactly 200 columns wide — the pipe leaves
+	// the target uncapped and the layout fills it.
+	for i, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if w := DisplayWidth(ln); w != 200 {
+			t.Errorf("line %d width = %d, want 200: %q", i, w, ln)
 		}
-	}
-	if widest <= 10 {
-		t.Errorf("expected overflow render in pipe mode, widest line = %d", widest)
 	}
 }
 
