@@ -90,7 +90,7 @@ func TestColumnVAlignCascadesToCells(t *testing.T) {
 	tbl.Column(0).SetVAlign(VAlignMiddle)
 
 	r := h.row(tbl.AddRow())
-	h.cell(r.AddCell(WithContent("short")))                      // inherits column
+	h.cell(r.AddCell(WithContent("short"))) // inherits column
 	h.cell(r.AddCell(WithContent("this is a much longer message that must wrap")))
 
 	out := tbl.String()
