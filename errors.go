@@ -18,11 +18,13 @@ var (
 	// content on first use so this error should not surface.
 	ErrReaderAlreadyConsumed = errors.New("cell reader already consumed")
 
-	// ErrTargetTooNarrow is returned during layout when the sum of
-	// per-column minimum widths exceeds the configured target width and
-	// no rendering is possible without collapsing content below
-	// readability.
-	ErrTargetTooNarrow = errors.New("target width too narrow for content minimums")
+	// ErrTargetTooNarrow is returned during layout when the target
+	// width cannot give every column at least one glyph of content
+	// space after paying for borders and padding. When minimums
+	// merely exceed the budget (a common case on narrow terminals),
+	// the layout silently shrinks columns and clips content — that
+	// is not an error.
+	ErrTargetTooNarrow = errors.New("target width too narrow for one glyph per column")
 
 	// ErrCrossSectionSpan is the sentinel wrapped by CrossSectionSpanEvent
 	// for callers that want to use errors.Is on a warning's backing

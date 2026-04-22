@@ -205,9 +205,11 @@ func TestRenderPreservesANSI(t *testing.T) {
 }
 
 func TestWriteToReturnsLayoutError(t *testing.T) {
-	tbl := NewTable(WithTargetWidth(10))
+	// Overhead for 2 cols is (2+1) + 2*2 = 7. Target=7 leaves 0
+	// content cols — genuinely pathological.
+	tbl := NewTable(WithTargetWidth(7))
 	r := tbl.AddRow()
-	r.AddCell(WithContent("loooooooongword")) // min > available
+	r.AddCell(WithContent("loooooooongword"))
 	r.AddCell(WithContent("anotheroneeeee"))
 
 	var buf bytes.Buffer

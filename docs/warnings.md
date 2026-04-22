@@ -187,23 +187,25 @@ Fields: `CellID`, `DeclaredSpan`, `EffectiveSpan`, `Section`.
 
 ## Layout errors vs. warnings
 
-There is exactly one render condition that produces a **returned
-error** instead of a warning: the sum of column minimums exceeds
-the target width budget. `Table.WriteTo` surfaces this as
-`fmt.Errorf(..., ErrTargetTooNarrow)`:
+Rendering only returns an error in one scenario: the target width
+isn't large enough to give every column at least one glyph of
+content space after paying for borders and padding. That's the
+`ErrTargetTooNarrow` sentinel, surfaced via `Table.WriteTo`:
 
 ```go
 var buf bytes.Buffer
 n, err := tbl.WriteTo(&buf)
 if errors.Is(err, termtable.ErrTargetTooNarrow) {
-    // buf still contains a best-effort render at minimum widths.
+    // The terminal is genuinely too small for the number of columns
+    // in this table. buf contains a best-effort render.
 }
 ```
 
-The best-effort render is always produced — the table does not
-panic or return empty output. Callers that really want to fail
-loud can treat the error as terminal, but many callers will be
-happy with the degraded output plus a log line.
+Narrower-than-minimum content (long words that don't fit their
+column's share of the target) is **not** an error: the layout
+silently shrinks below the per-column content minimum and the wrap
+pass clips each cell with an ellipsis. The output stays well-formed
+at the target width. Callers don't need to handle this case.
 
 ## `Table.LastRenderError` for `String` callers
 

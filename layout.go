@@ -35,7 +35,8 @@ const effectivelyUnbounded = 1 << 30
 // body, then footers). wrapped is the per-cell wrapped content used by
 // the renderer; each slice entry is one rendered line including ANSI
 // state. warnings aggregates non-fatal events from solving. err is
-// ErrTargetTooNarrow when the minimum widths cannot fit.
+// ErrTargetTooNarrow only in the pathological case where the target
+// has no room for even one glyph per column.
 type layoutResult struct {
 	colAssigned []int
 	rowHeights  []int
@@ -57,9 +58,12 @@ type layoutResult struct {
 //     effMin = effMax = userWidth (clamped up to contentMin on conflict,
 //     producing a best-effort overflow rather than silently cropping
 //     content).
-//  2. Feasibility: sum(effMin) must fit in the available budget.
-//     Otherwise ErrTargetTooNarrow, falling back to a best-effort
-//     layout at effMin widths.
+//  2. Feasibility: when sum(effMin) exceeds the budget, shrink every
+//     column proportionally so each still gets at least one glyph of
+//     width; cells with unbreakable content wider than their slot clip
+//     it with an ellipsis via the wrap pass. ErrTargetTooNarrow only
+//     fires when the budget cannot even give every column a single
+//     glyph (available < nCols).
 //  3. Initialize colAssigned to effMin. Water-fill the remaining
 //     budget by column weights (default 1.0), capped at effMax per
 //     column. Rounding leftovers distribute one-per-column left-first
@@ -97,12 +101,29 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 	for _, v := range effMin {
 		minSum += v
 	}
-	if minSum > available {
+	if available < nCols {
+		// Genuinely pathological: the target width doesn't have room
+		// for one glyph per column after paying for borders and
+		// padding. Distribute what we have left-first and surface a
+		// hard error — the caller needs to widen the target or drop
+		// a column.
 		out.err = fmt.Errorf(
-			"target width %d leaves %d for content but content minimum sums to %d: %w",
-			target, available, minSum, ErrTargetTooNarrow,
+			"target width %d leaves %d for content but table has %d columns: %w",
+			target, available, nCols, ErrTargetTooNarrow,
 		)
-		copy(out.colAssigned, effMin)
+		distributeShrunkBudget(out.colAssigned, effMin, available)
+		out.rowHeights = computeRowHeights(t, out.colAssigned, out.wrapped)
+		return out
+	}
+	if minSum > available {
+		// Content wants more room than the target gives. Shrink each
+		// column below its natural minimum so the frame still fits;
+		// cells that end up narrower than their unbreakable content
+		// will clip it with an ellipsis via the normal wrap path.
+		// This is not an error — output is well-formed at the target
+		// width. Callers that care can still observe the compression
+		// through the resulting per-column widths.
+		distributeShrunkBudget(out.colAssigned, effMin, available)
 		out.rowHeights = computeRowHeights(t, out.colAssigned, out.wrapped)
 		return out
 	}
@@ -249,6 +270,86 @@ func effectiveBounds(t *Table, m *measureResult, nCols int) (effMin, effMax []in
 // Each round allocates floor(weight/totalWeight * remaining) to every
 // flex column; leftover from rounding is distributed one-per-column
 // left-first so the output is deterministic.
+// distributeShrunkBudget allocates a tight `available` budget into
+// `dst` when per-column minimums cannot be honoured. `proportions`
+// (typically effMin) guides the split: columns that naturally want
+// more space get a proportionally larger slice.
+//
+// Invariants:
+//   - When `available >= len(dst)`, every column gets at least 1 and the
+//     allocations sum to exactly `available`.
+//   - When `available < len(dst)`, the first `available` columns each get
+//     1 and the rest get 0 — a pathological case where even one glyph
+//     per column does not fit.
+//   - When `available <= 0`, every column is set to 0.
+func distributeShrunkBudget(dst, proportions []int, available int) {
+	n := len(dst)
+	if n == 0 {
+		return
+	}
+	if available <= 0 {
+		for i := range dst {
+			dst[i] = 0
+		}
+		return
+	}
+	if available < n {
+		for i := range dst {
+			if i < available {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+		return
+	}
+	// Phase 1: seed every column with 1.
+	for i := range dst {
+		dst[i] = 1
+	}
+	remaining := available - n
+
+	// Phase 2: proportional share of what's left.
+	var propSum int
+	for _, p := range proportions {
+		if p > 0 {
+			propSum += p
+		}
+	}
+	if propSum > 0 {
+		for i, p := range proportions {
+			if p <= 0 {
+				continue
+			}
+			dst[i] += p * remaining / propSum
+		}
+	}
+
+	// Phase 3: reconcile rounding. Push any leftover out to the left,
+	// or reclaim from the left when proportional math overshot.
+	assigned := sumInts(dst)
+	diff := available - assigned
+	for diff > 0 {
+		for i := 0; i < n && diff > 0; i++ {
+			dst[i]++
+			diff--
+		}
+	}
+	for diff < 0 {
+		progress := false
+		for i := 0; i < n && diff < 0; i++ {
+			if dst[i] > 1 {
+				dst[i]--
+				diff++
+				progress = true
+			}
+		}
+		if !progress {
+			return
+		}
+	}
+}
+
 func distributeByWeights(assigned, effMax []int, weights []float64, available int) {
 	remaining := available - sumInts(assigned)
 	for remaining > 0 {
