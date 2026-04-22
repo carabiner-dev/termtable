@@ -373,11 +373,19 @@ func (t *Table) LastRenderError() error { return t.lastRenderErr }
 // WriteTo renders the table to w. Returns the number of bytes written
 // and either a write error from w or a layout error (e.g.,
 // ErrTargetTooNarrow) — write errors take precedence when both occur.
+//
+// When the attached stdout or stderr is a terminal, every output line
+// is clipped to that terminal's width (with an ellipsis marking the
+// cut). Writes to pipes, files, or other non-interactive sinks pass
+// through unclipped.
 func (t *Table) WriteTo(w io.Writer) (int64, error) {
 	m := Measure(t)
 	l := Layout(t, m)
 	t.renderWarnings = append(t.renderWarnings[:0], l.warnings...)
 	out := renderTable(t, l, t.opts.border)
+	if tty, ok := terminalWidthProbe(); ok {
+		out = clipToTerminalWidth(out, tty, t.resolveEmojiWidth())
+	}
 	n, err := w.Write([]byte(out))
 	if err != nil {
 		return int64(n), err

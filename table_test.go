@@ -4,6 +4,7 @@
 package termtable
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -219,6 +220,55 @@ func TestResolvedTargetWidthNoTTYNoCap(t *testing.T) {
 	tbl := NewTable(WithTargetWidth(500))
 	if got := tbl.ResolvedTargetWidth(); got != 500 {
 		t.Errorf("non-TTY explicit = %d, want 500 (no cap applied)", got)
+	}
+}
+
+// TestRenderNeverExceedsTTYWidth verifies the hard guarantee: when a
+// terminal is attached, no rendered line is wider than the terminal,
+// even when the content's minimum widths would otherwise force an
+// overflowing best-effort render.
+func TestRenderNeverExceedsTTYWidth(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 20, true)
+
+	// Target is narrower than the content minimums — the layout
+	// solver will surface ErrTargetTooNarrow and produce a
+	// best-effort render that, left alone, would exceed the target.
+	// The TTY clip must bring every line back under 20 columns.
+	tbl := NewTable(WithTargetWidth(10))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("averylongwordthatexceedsthescreen"))
+	r.AddCell(WithContent("anotherlongwordtoo"))
+
+	out := tbl.String()
+	for i, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if w := DisplayWidth(ln); w > 20 {
+			t.Errorf("line %d has width %d > 20 (TTY cap): %q", i, w, ln)
+		}
+	}
+}
+
+// TestRenderNoClipToPipe verifies that non-interactive sinks (pipes,
+// files) are not clipped — the user said those are free to overflow.
+func TestRenderNoClipToPipe(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 0, false)
+
+	tbl := NewTable(WithTargetWidth(10))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("averylongwordthatexceedsthescreen"))
+
+	out := tbl.String()
+	// The overflow render is wider than 10 — confirm no clip happened.
+	// At least one line must exceed the target width.
+	var widest int
+	for _, ln := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if w := DisplayWidth(ln); w > widest {
+			widest = w
+		}
+	}
+	if widest <= 10 {
+		t.Errorf("expected overflow render in pipe mode, widest line = %d", widest)
 	}
 }
 
