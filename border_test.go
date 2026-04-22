@@ -121,7 +121,8 @@ func TestBorderStyleCSSRoutesToBorderSet(t *testing.T) {
 		{"heavy", "border-style: heavy", '━'},
 		{"rounded", "border-style: rounded", '╭'},
 		{"ascii", "border-style: ascii", '+'},
-		{noneStyle, "border-style: none", ' '}, // all glyphs are spaces
+		{noneStyle, "border-style: none", ' '},
+		{"hidden", "border-style: hidden", ' '}, // invisible but spaced
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -134,9 +135,19 @@ func TestBorderStyleCSSRoutesToBorderSet(t *testing.T) {
 			r.AddCell(WithContent("y"))
 			out := tbl.String()
 			if tc.name == noneStyle {
+				// border-style: none suppresses every boundary entirely.
+				// Exactly one rendered line per content row, no borders.
 				lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-				if strings.TrimSpace(lines[0]) != "" {
-					t.Errorf("border-style:none should produce blank top border, got %q", lines[0])
+				if len(lines) != 1 {
+					t.Errorf("border-style:none should produce 1 line (no borders), got %d:\n%s", len(lines), out)
+				}
+				return
+			}
+			if tc.name == "hidden" {
+				// border-style: hidden keeps the spacing but renders
+				// every glyph as a space.
+				if !strings.Contains(out, "  x") {
+					t.Errorf("border-style:hidden should keep content padded with spaces, got:\n%s", out)
 				}
 				return
 			}

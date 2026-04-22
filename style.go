@@ -41,8 +41,41 @@ type Style struct {
 	maxLines     int
 	trimPosition TrimPosition
 
+	// Per-edge border directives. Each edge may request one of:
+	// BorderEdgeNone (no line, no space), BorderEdgeHidden (line is
+	// emitted but rendered as spaces), or BorderEdgeSolid (rendered
+	// with the table's BorderSet glyphs). Unset (zero value) means
+	// "inherit". Rows honour top/bottom only; cells honour all four;
+	// vertical edges (left/right) apply only between columns.
+	borderTop    BorderEdge
+	borderRight  BorderEdge
+	borderBottom BorderEdge
+	borderLeft   BorderEdge
+
 	set styleField
 }
+
+// BorderEdge is the per-edge directive used by row and cell styles.
+// The zero value (BorderEdgeAuto) means "inherit from a parent or
+// fall back to the table default".
+type BorderEdge uint8
+
+const (
+	// BorderEdgeAuto is the unset value — the edge inherits from the
+	// enclosing row, then the table default.
+	BorderEdgeAuto BorderEdge = iota
+	// BorderEdgeNone suppresses the edge entirely. If every adjacent
+	// cell at a boundary resolves to None, the line (or column seam)
+	// is omitted from output altogether.
+	BorderEdgeNone
+	// BorderEdgeHidden keeps the boundary's spacing but paints it as
+	// whitespace. The line is still emitted; the glyph is a space.
+	BorderEdgeHidden
+	// BorderEdgeSolid draws the boundary using the table's BorderSet
+	// glyphs (single/double/heavy/…). "Solid" here is the CSS name
+	// for "draw it"; the actual stroke style is the BorderSet choice.
+	BorderEdgeSolid
+)
 
 // Shared CSS keyword spellings — promoted to constants because
 // goconst grumbles when identical literals appear across several
@@ -51,6 +84,8 @@ const (
 	cssNormal = "normal"
 	cssAuto   = "auto"
 	cssNone   = "none"
+	cssHidden = "hidden"
+	cssSolid  = "solid"
 	cssLeft   = "left"
 	cssCenter = "center"
 	cssRight  = "right"
@@ -75,6 +110,10 @@ const (
 	sTrim
 	sMaxLines
 	sTrimPos
+	sBorderTop
+	sBorderRight
+	sBorderBottom
+	sBorderLeft
 )
 
 // isEmpty reports whether s contributes nothing to output.
@@ -139,6 +178,22 @@ func (s *Style) merge(src *Style) {
 	if src.set&sTrimPos != 0 {
 		s.trimPosition = src.trimPosition
 		s.set |= sTrimPos
+	}
+	if src.set&sBorderTop != 0 {
+		s.borderTop = src.borderTop
+		s.set |= sBorderTop
+	}
+	if src.set&sBorderRight != 0 {
+		s.borderRight = src.borderRight
+		s.set |= sBorderRight
+	}
+	if src.set&sBorderBottom != 0 {
+		s.borderBottom = src.borderBottom
+		s.set |= sBorderBottom
+	}
+	if src.set&sBorderLeft != 0 {
+		s.borderLeft = src.borderLeft
+		s.set |= sBorderLeft
 	}
 }
 
@@ -236,7 +291,66 @@ func applyDecl(s *Style, prop, val string) {
 	if applyTextDecl(s, prop, val) {
 		return
 	}
+	if applyBorderEdgeDecl(s, prop, val) {
+		return
+	}
 	applyLayoutDecl(s, prop, val)
+}
+
+// applyBorderEdgeDecl parses per-edge border directives — the CSS
+// `border` shorthand and its four longhand siblings. Returns true if
+// the property was recognized as a border-edge declaration.
+func applyBorderEdgeDecl(s *Style, prop, val string) bool {
+	switch prop {
+	case "border":
+		if e, ok := parseBorderEdge(val); ok {
+			s.borderTop = e
+			s.borderRight = e
+			s.borderBottom = e
+			s.borderLeft = e
+			s.set |= sBorderTop | sBorderRight | sBorderBottom | sBorderLeft
+		}
+		return true
+	case "border-top":
+		if e, ok := parseBorderEdge(val); ok {
+			s.borderTop = e
+			s.set |= sBorderTop
+		}
+		return true
+	case "border-right":
+		if e, ok := parseBorderEdge(val); ok {
+			s.borderRight = e
+			s.set |= sBorderRight
+		}
+		return true
+	case "border-bottom":
+		if e, ok := parseBorderEdge(val); ok {
+			s.borderBottom = e
+			s.set |= sBorderBottom
+		}
+		return true
+	case "border-left":
+		if e, ok := parseBorderEdge(val); ok {
+			s.borderLeft = e
+			s.set |= sBorderLeft
+		}
+		return true
+	}
+	return false
+}
+
+// parseBorderEdge accepts the per-edge keywords. Unknown values
+// return (_, false) and are ignored by the caller.
+func parseBorderEdge(val string) (BorderEdge, bool) {
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case cssNone:
+		return BorderEdgeNone, true
+	case cssHidden:
+		return BorderEdgeHidden, true
+	case cssSolid:
+		return BorderEdgeSolid, true
+	}
+	return BorderEdgeAuto, false
 }
 
 // applyColorDecl handles the colour-valued properties. Returns true

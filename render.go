@@ -38,28 +38,39 @@ func newRenderContext(t *Table, l *layoutResult, b BorderSet) *renderContext {
 // renderTable produces the full printable representation of t using
 // the column widths and wrapped content from l. Each line, including
 // the top and bottom border, is terminated with '\n'. An empty table
-// (zero rows or zero columns) renders to the empty string.
+// (zero rows or zero columns) renders to the empty string. A border
+// line is omitted entirely when every adjacent cell's per-edge
+// directive resolves to BorderEdgeNone (see Style.borderTop /
+// borderBottom).
 func renderTable(t *Table, l *layoutResult, b BorderSet) string {
 	rc := newRenderContext(t, l, b)
 	if rc.nCols == 0 || rc.nRows == 0 {
 		return ""
 	}
 	var out strings.Builder
-	out.WriteString(rc.borderLine(0))
-	out.WriteByte('\n')
+	rc.writeBorderLine(&out, 0)
 	for r := range rc.nRows {
 		for s := range l.rowHeights[r] {
 			out.WriteString(rc.contentLine(r, s))
 			out.WriteByte('\n')
 		}
 		if r < rc.nRows-1 {
-			out.WriteString(rc.borderLine(r + 1))
-			out.WriteByte('\n')
+			rc.writeBorderLine(&out, r+1)
 		}
 	}
-	out.WriteString(rc.borderLine(rc.nRows))
-	out.WriteByte('\n')
+	rc.writeBorderLine(&out, rc.nRows)
 	return out.String()
+}
+
+// writeBorderLine emits a border line at boundary r if any adjacent
+// cell wants one; otherwise it writes nothing (not even a newline),
+// so the preceding and following content rows sit flush together.
+func (rc *renderContext) writeBorderLine(out *strings.Builder, r int) {
+	if !rc.shouldEmitBorderLine(r) {
+		return
+	}
+	out.WriteString(rc.borderLine(r))
+	out.WriteByte('\n')
 }
 
 // columnCellWidth returns the number of terminal columns occupied by a
@@ -108,31 +119,165 @@ func (rc *renderContext) isBorderSuppressedV(r, c int) bool {
 
 // junctionArms computes the four-bit arm mask for the border
 // junction at the intersection of the horizontal border line between
-// rows r-1 and r and the column boundary c. Each arm is set only when
-// the corresponding border segment is actually drawn (not suppressed
-// by a span crossing through the junction).
+// rows r-1 and r and the column boundary c. Each arm is set only
+// when the corresponding border segment is actually drawn — either
+// because a rowspan/colspan suppresses it, or because the aggregated
+// per-edge directive at that segment evaluates to something other
+// than Solid. Hidden and None arms both leave the bit cleared; the
+// renderer substitutes a space at that position.
 func (rc *renderContext) junctionArms(r, c int) int {
 	var mask int
-	if r > 0 && !rc.isBorderSuppressedV(r-1, c) {
+	if r > 0 && !rc.isBorderSuppressedV(r-1, c) && rc.vSeamEdge(r-1, c) == BorderEdgeSolid {
 		mask |= armN
 	}
-	if r < rc.nRows && !rc.isBorderSuppressedV(r, c) {
+	if r < rc.nRows && !rc.isBorderSuppressedV(r, c) && rc.vSeamEdge(r, c) == BorderEdgeSolid {
 		mask |= armS
 	}
-	if c < rc.nCols && !rc.isBorderSuppressedH(r, c) {
+	if c < rc.nCols && !rc.isBorderSuppressedH(r, c) && rc.hBoundaryColumnEdge(r, c) == BorderEdgeSolid {
 		mask |= armE
 	}
-	if c > 0 && !rc.isBorderSuppressedH(r, c-1) {
+	if c > 0 && !rc.isBorderSuppressedH(r, c-1) && rc.hBoundaryColumnEdge(r, c-1) == BorderEdgeSolid {
 		mask |= armW
 	}
 	return mask
+}
+
+// edgeSide names the four per-cell border edges.
+type edgeSide int
+
+const (
+	edgeTop edgeSide = iota
+	edgeRight
+	edgeBottom
+	edgeLeft
+)
+
+// cellEdge returns the resolved per-edge directive for cell on side.
+// A nil cell falls back to the table-level default; the table-level
+// default itself falls back to Solid when nothing in the cascade has
+// set it, preserving today's "draw all borders" behaviour.
+func (rc *renderContext) cellEdge(cell *Cell, side edgeSide) BorderEdge {
+	if cell == nil {
+		return rc.tableDefaultEdge(side)
+	}
+	s := rc.t.effectiveCellStyle(cell)
+	return resolveEdgeWithDefault(edgeOf(s, side), rc.tableDefaultEdge(side))
+}
+
+// tableDefaultEdge returns the table-level default for side, or
+// Solid when unset.
+func (rc *renderContext) tableDefaultEdge(side edgeSide) BorderEdge {
+	if rc.t.style == nil {
+		return BorderEdgeSolid
+	}
+	e := edgeOf(rc.t.style, side)
+	if e == BorderEdgeAuto {
+		return BorderEdgeSolid
+	}
+	return e
+}
+
+func edgeOf(s *Style, side edgeSide) BorderEdge {
+	if s == nil {
+		return BorderEdgeAuto
+	}
+	switch side {
+	case edgeTop:
+		return s.borderTop
+	case edgeRight:
+		return s.borderRight
+	case edgeBottom:
+		return s.borderBottom
+	case edgeLeft:
+		return s.borderLeft
+	}
+	return BorderEdgeAuto
+}
+
+func resolveEdgeWithDefault(e, fallback BorderEdge) BorderEdge {
+	if e == BorderEdgeAuto {
+		return fallback
+	}
+	return e
+}
+
+// hBoundaryColumnEdge aggregates the per-column effective edge
+// directive at the horizontal boundary between rows r-1 and r, in
+// column c. Precedence: Solid > Hidden > None.
+func (rc *renderContext) hBoundaryColumnEdge(r, c int) BorderEdge {
+	if c < 0 || c >= rc.nCols {
+		return BorderEdgeNone
+	}
+	var above, below BorderEdge
+	if r > 0 {
+		above = rc.cellEdge(rc.t.CellAt(r-1, c), edgeBottom)
+	}
+	if r < rc.nRows {
+		below = rc.cellEdge(rc.t.CellAt(r, c), edgeTop)
+	}
+	return strongerEdge(above, below)
+}
+
+// vSeamEdge aggregates the per-row effective edge directive at the
+// vertical seam between columns c-1 and c, in row r.
+func (rc *renderContext) vSeamEdge(r, c int) BorderEdge {
+	if r < 0 || r >= rc.nRows {
+		return BorderEdgeNone
+	}
+	var left, right BorderEdge
+	if c > 0 {
+		left = rc.cellEdge(rc.t.CellAt(r, c-1), edgeRight)
+	}
+	if c < rc.nCols {
+		right = rc.cellEdge(rc.t.CellAt(r, c), edgeLeft)
+	}
+	return strongerEdge(left, right)
+}
+
+// strongerEdge returns the higher-precedence of a and b. Solid wins
+// over Hidden wins over None. Auto is treated as None for aggregation
+// (callers should resolve it first).
+func strongerEdge(a, b BorderEdge) BorderEdge {
+	if a == BorderEdgeSolid || b == BorderEdgeSolid {
+		return BorderEdgeSolid
+	}
+	if a == BorderEdgeHidden || b == BorderEdgeHidden {
+		return BorderEdgeHidden
+	}
+	return BorderEdgeNone
+}
+
+// shouldEmitBorderLine reports whether the horizontal border line at
+// boundary r should be written. Lines are omitted when every column
+// position and every junction resolves to BorderEdgeNone.
+func (rc *renderContext) shouldEmitBorderLine(r int) bool {
+	for c := range rc.nCols {
+		if rc.isBorderSuppressedH(r, c) {
+			// A rowspan-suppressed segment forces the line to exist —
+			// the cell's content shows through here.
+			return true
+		}
+		if rc.hBoundaryColumnEdge(r, c) != BorderEdgeNone {
+			return true
+		}
+	}
+	// Check junction arms too: a vertical run meeting the boundary
+	// may request a glyph even when every horizontal column is None.
+	for c := 0; c <= rc.nCols; c++ {
+		if rc.junctionArms(r, c) != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // borderLine renders a horizontal border line at boundary r. r == 0
 // is the top border, r == nRows is the bottom, everything in between
 // is an inter-row separator. Border segments that would cross a
 // rowspan cell are replaced with that cell's content at the matching
-// sub-line.
+// sub-line. Per-column border directives determine whether each
+// column position emits the BorderSet's horizontal glyph (Solid) or
+// a run of spaces (Hidden or None).
 func (rc *renderContext) borderLine(r int) string {
 	var b strings.Builder
 	rc.writeJunction(&b, r, 0)
@@ -148,7 +293,11 @@ func (rc *renderContext) borderLine(r int) string {
 			c += cell.colSpan
 		} else {
 			w := rc.columnCellWidth(c)
-			b.WriteString(rc.styleBorder(strings.Repeat(string(rc.border.Horizontal), w)))
+			glyph := ' '
+			if rc.hBoundaryColumnEdge(r, c) == BorderEdgeSolid {
+				glyph = rc.border.Horizontal
+			}
+			b.WriteString(rc.styleBorder(strings.Repeat(string(glyph), w)))
 			c++
 		}
 		rc.writeJunction(&b, r, c)
@@ -157,7 +306,11 @@ func (rc *renderContext) borderLine(r int) string {
 }
 
 func (rc *renderContext) writeJunction(b *strings.Builder, r, c int) {
-	glyph := rc.border.Joins[rc.junctionArms(r, c)]
+	arms := rc.junctionArms(r, c)
+	glyph := rune(0)
+	if arms != 0 {
+		glyph = rc.border.Joins[arms]
+	}
 	if glyph == 0 {
 		glyph = ' '
 	}
@@ -173,37 +326,42 @@ func (rc *renderContext) styleBorder(s string) string {
 // contentLine renders a single content line: absolute row r,
 // sub-line index s within that row. Cells spanning multiple columns
 // emit once at their anchor column; empty slots (where no cell
-// exists at the (r, c) position) emit blank space.
+// exists at the (r, c) position) emit blank space. Vertical seams
+// consult per-cell border-left/right directives — Solid uses the
+// BorderSet's Vertical glyph, Hidden/None substitute a space.
 func (rc *renderContext) contentLine(r, s int) string {
 	var b strings.Builder
-	vert := rc.styleBorder(string(rc.border.Vertical))
-	b.WriteString(vert)
+	b.WriteString(rc.seamGlyph(r, 0))
 	c := 0
 	for c < rc.nCols {
 		cell := rc.t.CellAt(r, c)
 		if cell == nil {
 			b.WriteString(strings.Repeat(" ", rc.columnCellWidth(c)))
 			c++
-			if c < rc.nCols {
-				b.WriteString(vert)
-			}
+			b.WriteString(rc.seamGlyph(r, c))
 			continue
 		}
 		if cell.gridCol != c {
 			c = cell.gridCol + cell.colSpan
-			if c < rc.nCols {
-				b.WriteString(vert)
-			}
+			b.WriteString(rc.seamGlyph(r, c))
 			continue
 		}
 		rc.writeCellSlice(&b, cell, rc.cellSubLineAtContent(cell, r, s))
 		c += cell.colSpan
-		if c < rc.nCols {
-			b.WriteString(vert)
-		}
+		b.WriteString(rc.seamGlyph(r, c))
 	}
-	b.WriteString(vert)
 	return b.String()
+}
+
+// seamGlyph returns the styled glyph drawn at the vertical seam
+// between columns c-1 and c in row r. Outer seams (c == 0 or
+// c == nCols) have only one adjacent cell; internal seams aggregate
+// both sides through vSeamEdge.
+func (rc *renderContext) seamGlyph(r, c int) string {
+	if rc.vSeamEdge(r, c) == BorderEdgeSolid {
+		return rc.styleBorder(string(rc.border.Vertical))
+	}
+	return " "
 }
 
 // writeCellSlice writes padding + aligned content + padding for cell

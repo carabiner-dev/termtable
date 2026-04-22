@@ -180,10 +180,21 @@ func WithEmojiWidth(mode EmojiWidthMode) TableOption {
 //   - font-weight: bold | normal
 //   - font-style: italic | normal
 //   - text-decoration: underline | line-through | none
-//   - border-style: single | double | heavy | rounded | ascii | none —
+//   - border-style: single | double | heavy | rounded | ascii —
 //     selects the BorderSet used for the table, equivalent to calling
 //     WithBorder with the corresponding constructor (SingleLine,
-//     DoubleLine, HeavyLine, RoundedLine, ASCIILine, NoBorder).
+//     DoubleLine, HeavyLine, RoundedLine, ASCIILine).
+//   - border-style: hidden — uses space glyphs for every boundary, so
+//     borders preserve spacing but render invisibly. Equivalent to
+//     WithBorder(NoBorder()).
+//   - border-style: none — sets the table's default edge directive
+//     to "no border". Unlike "hidden", boundaries with no cell opting
+//     in to a visible border are dropped entirely from output.
+//     Combine with per-row or per-cell "border-bottom: solid" etc. to
+//     selectively re-enable a single edge.
+//   - border / border-top / border-right / border-bottom / border-left:
+//     per-edge directive accepting "none", "hidden", or "solid". Works
+//     on table (default for all rows/cells), row, and cell styles.
 //   - width: N | N% — target layout width, equivalent to
 //     WithTargetWidth / WithTargetWidthPercent. The last width
 //     declaration on the table wins.
@@ -194,7 +205,23 @@ func WithTableStyle(css string) TableOption {
 		iterateCSS(css, func(prop, val string) {
 			switch prop {
 			case "border-style":
-				if b, ok := borderSetByName(strings.ToLower(val)); ok {
+				key := strings.ToLower(strings.TrimSpace(val))
+				if key == cssNone {
+					// CSS-idiomatic "none": leave BorderSet alone, set
+					// the table's default edge directive to None so
+					// every boundary is omitted unless a row or cell
+					// opts in.
+					if t.style == nil {
+						t.style = &Style{}
+					}
+					t.style.borderTop = BorderEdgeNone
+					t.style.borderRight = BorderEdgeNone
+					t.style.borderBottom = BorderEdgeNone
+					t.style.borderLeft = BorderEdgeNone
+					t.style.set |= sBorderTop | sBorderRight | sBorderBottom | sBorderLeft
+					return
+				}
+				if b, ok := borderSetByName(key); ok {
 					t.opts.border = b
 				}
 				return
@@ -293,6 +320,43 @@ func WithRowStyle(css string) RowOption {
 			r.style = &Style{}
 		}
 		parseCSS(css, r.style)
+	}
+}
+
+// WithRowBorder sets the border directive for both the top and the
+// bottom edges of a row. Equivalent to the CSS shorthand
+// "border: <e>" on the row's style. See BorderEdge for the semantics.
+func WithRowBorder(e BorderEdge) RowOption {
+	return func(r *rowBody) {
+		if r.style == nil {
+			r.style = &Style{}
+		}
+		r.style.borderTop = e
+		r.style.borderBottom = e
+		r.style.set |= sBorderTop | sBorderBottom
+	}
+}
+
+// WithRowBorderTop sets the border directive for the row's top edge.
+func WithRowBorderTop(e BorderEdge) RowOption {
+	return func(r *rowBody) {
+		if r.style == nil {
+			r.style = &Style{}
+		}
+		r.style.borderTop = e
+		r.style.set |= sBorderTop
+	}
+}
+
+// WithRowBorderBottom sets the border directive for the row's bottom
+// edge. Use this to underline the header row in a borderless table.
+func WithRowBorderBottom(e BorderEdge) RowOption {
+	return func(r *rowBody) {
+		if r.style == nil {
+			r.style = &Style{}
+		}
+		r.style.borderBottom = e
+		r.style.set |= sBorderBottom
 	}
 }
 
@@ -465,6 +529,66 @@ func WithCellStyle(css string) CellOption {
 			c.style = &Style{}
 		}
 		parseCSS(css, c.style)
+	}
+}
+
+// WithCellBorder sets the border directive on all four edges of the
+// cell. Equivalent to the CSS shorthand "border: <e>" in a cell
+// style. See BorderEdge for the semantics.
+func WithCellBorder(e BorderEdge) CellOption {
+	return func(c *Cell) {
+		if c.style == nil {
+			c.style = &Style{}
+		}
+		c.style.borderTop = e
+		c.style.borderRight = e
+		c.style.borderBottom = e
+		c.style.borderLeft = e
+		c.style.set |= sBorderTop | sBorderRight | sBorderBottom | sBorderLeft
+	}
+}
+
+// WithCellBorderTop sets the border directive for the cell's top edge.
+func WithCellBorderTop(e BorderEdge) CellOption {
+	return func(c *Cell) {
+		if c.style == nil {
+			c.style = &Style{}
+		}
+		c.style.borderTop = e
+		c.style.set |= sBorderTop
+	}
+}
+
+// WithCellBorderRight sets the border directive for the cell's right edge.
+func WithCellBorderRight(e BorderEdge) CellOption {
+	return func(c *Cell) {
+		if c.style == nil {
+			c.style = &Style{}
+		}
+		c.style.borderRight = e
+		c.style.set |= sBorderRight
+	}
+}
+
+// WithCellBorderBottom sets the border directive for the cell's bottom edge.
+func WithCellBorderBottom(e BorderEdge) CellOption {
+	return func(c *Cell) {
+		if c.style == nil {
+			c.style = &Style{}
+		}
+		c.style.borderBottom = e
+		c.style.set |= sBorderBottom
+	}
+}
+
+// WithCellBorderLeft sets the border directive for the cell's left edge.
+func WithCellBorderLeft(e BorderEdge) CellOption {
+	return func(c *Cell) {
+		if c.style == nil {
+			c.style = &Style{}
+		}
+		c.style.borderLeft = e
+		c.style.set |= sBorderLeft
 	}
 }
 

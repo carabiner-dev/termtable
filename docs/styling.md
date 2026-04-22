@@ -78,7 +78,9 @@ t.Column(2).SetAlign(termtable.AlignRight).Style("color: yellow")
 | `color`             | name / `#rrggbb` / `rgb(r,g,b)`               | Foreground text colour.                                     |
 | `background`        | name / `#rrggbb` / `rgb(r,g,b)`               | Alias: `background-color`.                                  |
 | `border-color`      | name / `#rrggbb` / `rgb(r,g,b)`               | Table-level only — ignored on rows, columns, and cells.     |
-| `border-style`      | `single` \| `double` \| `heavy` \| `rounded` \| `ascii` \| `none` | Table-level only. See [borders.md](borders.md).              |
+| `border-style`      | `single` \| `double` \| `heavy` \| `rounded` \| `ascii` \| `hidden` | Table-level only. `hidden` keeps the spacing but paints every glyph as a space. For truly borderless use `border: none`. See [borders.md](borders.md). |
+| `border`            | `none` \| `hidden` \| `solid`                 | Per-edge directive (shorthand for all four edges). `none` drops the line entirely when every neighbour agrees; `hidden` preserves spacing with spaces; `solid` draws the BorderSet glyph. Works on table, row, and cell styles. |
+| `border-top` / `border-right` / `border-bottom` / `border-left` | `none` \| `hidden` \| `solid` | Per-edge longhands. Rows honour top/bottom only; cells honour all four.                        |
 | `width`             | `N` \| `N%`                                   | Table-level only. Pins the layout target — absolute or a percentage of the screen. Equivalent to `WithTargetWidth` / `WithTargetWidthPercent`. |
 | `min-width`         | `N` \| `N%`                                   | Table-level only. Floor for the layout target. Default: `80`. Equivalent to `WithMinWidth` / `WithMinWidthPercent`. |
 | `max-width`         | `N` \| `N%`                                   | Table-level only. Ceiling for the layout target. Default: `90%`. Equivalent to `WithMaxWidth` / `WithMaxWidthPercent`. |

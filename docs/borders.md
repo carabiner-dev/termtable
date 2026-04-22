@@ -102,7 +102,7 @@ corners, T-joins, and crosses render as `+`.
 +---------------+----------+-----------+
 ```
 
-### `NoBorder()` — `border-style: none`
+### `NoBorder()` — `border-style: hidden`
 
 Every border glyph is replaced with U+0020 (space). The grid spacing
 is preserved, so columns stay aligned, but no visible dividers are
@@ -134,6 +134,70 @@ t := termtable.NewTable(
 
 Per-column `border-color` declarations are accepted by the CSS
 parser but ignored at render time — borders are a table-wide concern.
+
+## Per-edge borders
+
+The `border` shorthand and the four longhands
+(`border-top`, `border-right`, `border-bottom`, `border-left`)
+control whether a given edge is drawn. Each accepts one of:
+
+| Value    | Effect                                                       |
+|:---------|:-------------------------------------------------------------|
+| `solid`  | Draw the edge using the table's BorderSet glyphs (default).  |
+| `hidden` | Emit the line but fill with spaces — preserves grid spacing. |
+| `none`   | Omit the edge entirely. If every cell at a boundary agrees, the line is dropped from the output (no blank line). |
+
+Resolution at each boundary follows the **Solid > Hidden > None**
+precedence. If *any* adjacent cell says `solid`, the line is drawn
+and cells that opted for `none` render their portion as spaces. If
+*every* adjacent cell says `none`, the line is skipped altogether.
+
+Cascades table → column → row → cell, same as the visual style
+properties. Rows honour `border-top` and `border-bottom`; cells
+honour all four edges; `border` sets every edge at once.
+
+The canonical "header rule only" layout:
+
+```go
+t := termtable.NewTable(termtable.WithTableStyle("border: none"))
+hdr := t.AddHeader(termtable.WithRowBorderBottom(termtable.BorderEdgeSolid))
+hdr.AddCell(termtable.WithContent("Name"))
+hdr.AddCell(termtable.WithContent("Age"))
+// …body rows…
+```
+
+yields:
+
+```
+Name           Age
+────────────────────
+alice          30
+bob            29
+```
+
+A single cell can opt out of its row's border:
+
+```go
+hdr := t.AddHeader(termtable.WithRowBorderBottom(termtable.BorderEdgeSolid))
+hdr.AddCell(termtable.WithContent("Keep"))
+hdr.AddCell(termtable.WithContent("Skip"), termtable.WithCellBorderBottom(termtable.BorderEdgeNone))
+hdr.AddCell(termtable.WithContent("Keep"))
+```
+
+The rule is still drawn (the row wants it) but the middle column's
+portion renders as spaces.
+
+## `border-style: none` vs `hidden`
+
+The two are different defaults for the whole table:
+
+- `border-style: hidden` — loads `NoBorder()` as the glyph set.
+  Boundaries are still emitted; they just render as spaces. Use this
+  when you want the grid spacing but no visible dividers.
+- `border: none` (or `border-style: none`) — sets every default edge
+  to `none`. Boundaries where nothing opts in are **dropped
+  entirely** — no blank line between rows, content sits flush. Use
+  this as the starting point for per-row/cell border opt-ins.
 
 ## Custom border sets
 
