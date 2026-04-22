@@ -13,10 +13,17 @@ import (
 	"golang.org/x/term"
 )
 
-// defaultTargetWidth is used as the last-resort target width when no
-// explicit WithTargetWidth is supplied, COLUMNS is unset or invalid,
-// and no connected terminal can be queried for its size.
+// defaultTargetWidth is the floor for the default (no-preference)
+// layout: the table never renders narrower than this unless the
+// attached screen physically cannot fit 80 columns. It is also the
+// fallback used when no screen (terminal or COLUMNS) can be detected.
 const defaultTargetWidth = 80
+
+// defaultFillPercent is the fraction of the attached screen the
+// no-preference layout aims to fill. Leaving ~10 % of breathing room
+// keeps wide terminals from feeling edge-to-edge without shrinking
+// narrow ones.
+const defaultFillPercent = 90
 
 // Table is the root element. It owns the column list, the header / body
 // / footer row collections, the ID registry, and the occupancy grids
@@ -62,6 +69,14 @@ type tableOptions struct {
 	targetWidthSet        bool
 	targetWidthPercent    int
 	targetWidthPercentSet bool
+	minWidth              int
+	minWidthSet           bool
+	minWidthPercent       int
+	minWidthPercentSet    bool
+	maxWidth              int
+	maxWidthSet           bool
+	maxWidthPercent       int
+	maxWidthPercentSet    bool
 	border                BorderSet
 	padding               Padding
 	emojiWidth            EmojiWidthMode
@@ -296,39 +311,109 @@ func (t *Table) InBounds(r, c int) bool {
 }
 
 // ResolvedTargetWidth returns the target width the table will use for
-// layout. The resolution cascade, in order of preference:
+// layout. The resolver follows CSS-style semantics:
 //
-//  1. explicit WithTargetWidth(n)
-//  2. WithTargetWidthPercent(p) — computed against the terminal width
-//     when detected, else COLUMNS, else 80
-//  3. the COLUMNS environment variable, when it parses to a positive int
-//  4. defaultTargetWidth (80)
+//   - width (WithTargetWidth / WithTargetWidthPercent / "width: …" in
+//     CSS / COLUMNS env) pins the table to an absolute or relative
+//     size.
+//   - min-width (WithMinWidth / "min-width: …") is the floor.
+//   - max-width (WithMaxWidth / "max-width: …") is the ceiling.
+//   - When no explicit width is set, the default is min-width:80 and
+//     max-width:90 % — the table lives at at least 80 columns and
+//     grows to fill up to 90 % of the attached screen as content
+//     demands.
 //
-// Whatever value the cascade produces is then clamped to the attached
+// Whatever value the cascade produces is clamped to the attached
 // terminal's width when one is detected (stdout or stderr, via
 // golang.org/x/term), so output never exceeds the physical screen.
-// Pipes and other non-interactive sinks leave the value uncapped.
+//
+// ResolvedTargetWidth is called without a measurement, so its "natural"
+// baseline is the table's max-width. Layout uses the same resolver
+// internally but with the content-derived natural width, giving the
+// table exactly enough columns to hold its content (clamped to the
+// bounds).
 func (t *Table) ResolvedTargetWidth() int {
-	tty, ttyOK := terminalWidthProbe()
+	return t.resolveTargetWidth(0)
+}
 
-	want := defaultTargetWidth
+// resolveTargetWidth is the content-aware resolver used by Layout.
+// `natural` is the table's preferred width given its content (sum of
+// desired column widths plus overhead). Pass 0 when no measurement is
+// available — the resolver falls back to the table's max-width as the
+// baseline, which matches the public ResolvedTargetWidth contract.
+func (t *Table) resolveTargetWidth(natural int) int {
+	tty, ttyOK := terminalWidthProbe()
+	minW := t.resolveMinWidth(tty, ttyOK)
+	maxW := t.resolveMaxWidth(tty, ttyOK)
+
+	// Pick the baseline: explicit width > COLUMNS > content-natural >
+	// max-width (last is used when we have no measurement).
+	var target int
+	hasExplicit := false
 	switch {
 	case t.opts.targetWidthSet && t.opts.targetWidth > 0:
-		want = t.opts.targetWidth
+		target = t.opts.targetWidth
+		hasExplicit = true
 	case t.opts.targetWidthPercentSet && t.opts.targetWidthPercent > 0:
-		want = percentOfScreen(t.opts.targetWidthPercent, tty, ttyOK)
+		target = percentOfScreen(t.opts.targetWidthPercent, tty, ttyOK)
+		hasExplicit = true
 	default:
 		if v := os.Getenv("COLUMNS"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				want = n
+				target = n
+				hasExplicit = true
 			}
 		}
 	}
+	if !hasExplicit {
+		if natural > 0 {
+			target = natural
+		} else {
+			target = maxW
+		}
+	}
 
-	if ttyOK && want > tty {
+	// CSS-style clamps. When the user explicitly set a width, only
+	// apply min/max bounds they also explicitly set — don't let a
+	// default clamp silently override an explicit target. When the
+	// width is implicit, the defaults are always in effect.
+	minApplies := !hasExplicit || t.opts.minWidthSet || t.opts.minWidthPercentSet
+	maxApplies := !hasExplicit || t.opts.maxWidthSet || t.opts.maxWidthPercentSet
+	if maxApplies && target > maxW {
+		target = maxW
+	}
+	if minApplies && target < minW {
+		target = minW
+	}
+
+	if ttyOK && target > tty {
 		return tty
 	}
-	return want
+	return target
+}
+
+// resolveMinWidth returns the configured floor, falling back to
+// defaultTargetWidth (80) when none is set.
+func (t *Table) resolveMinWidth(tty int, ttyOK bool) int {
+	switch {
+	case t.opts.minWidthSet && t.opts.minWidth > 0:
+		return t.opts.minWidth
+	case t.opts.minWidthPercentSet && t.opts.minWidthPercent > 0:
+		return percentOfScreen(t.opts.minWidthPercent, tty, ttyOK)
+	}
+	return defaultTargetWidth
+}
+
+// resolveMaxWidth returns the configured ceiling, falling back to
+// defaultFillPercent (90 %) of the attached screen when none is set.
+func (t *Table) resolveMaxWidth(tty int, ttyOK bool) int {
+	switch {
+	case t.opts.maxWidthSet && t.opts.maxWidth > 0:
+		return t.opts.maxWidth
+	case t.opts.maxWidthPercentSet && t.opts.maxWidthPercent > 0:
+		return percentOfScreen(t.opts.maxWidthPercent, tty, ttyOK)
+	}
+	return percentOfScreen(defaultFillPercent, tty, ttyOK)
 }
 
 // percentOfScreen returns p% of the screen width, using the detected

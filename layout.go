@@ -87,9 +87,18 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 		return out
 	}
 
-	target := t.ResolvedTargetWidth()
 	geom := tableGeometry(t)
 	fixedOverhead := (nCols + 1) + nCols*geom.perColumnPad
+
+	// Natural width: what the table would like to be if every column
+	// could sit at its desired (no-wrap) width. Feed this to the
+	// CSS-style resolver so an under-filled table can shrink below
+	// max-width and a heavy one can grow up to it.
+	var desiredSum int
+	for _, v := range m.colDesired {
+		desiredSum += v
+	}
+	target := t.resolveTargetWidth(desiredSum + fixedOverhead)
 	available := target - fixedOverhead
 	if available < 0 {
 		available = 0
