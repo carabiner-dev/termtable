@@ -27,10 +27,13 @@ type Column struct {
 	// registry.
 	table *Table
 
-	width  int
-	minW   int
-	maxW   int
-	weight float64
+	width        int
+	minW         int
+	maxW         int
+	widthPercent int // 1..100, active when set&cWidthPct
+	minPercent   int // 1..100, active when set&cMinPct
+	maxPercent   int // 1..100, active when set&cMaxPct
+	weight       float64
 
 	// style is the column's default style. Alignment (text-align),
 	// color, background, and other attributes set here cascade to the
@@ -50,6 +53,9 @@ const (
 	cMin
 	cMax
 	cWeight
+	cWidthPct
+	cMinPct
+	cMaxPct
 )
 
 func newColumn(index int) *Column {
@@ -94,8 +100,11 @@ func (c *Column) elementID() string { return c.id }
 // SetWidth pins the column to exactly n display columns of content
 // (not counting padding or borders). Overrides SetMin and SetMax for
 // layout purposes. A value of n <= 0 clears the explicit width so the
-// solver returns to applying min/max/weight instead.
+// solver returns to applying min/max/weight instead. Also clears any
+// percent form previously set via SetWidthPercent.
 func (c *Column) SetWidth(n int) *Column {
+	c.set &^= cWidthPct
+	c.widthPercent = 0
 	if n <= 0 {
 		c.set &^= cWidth
 		c.width = 0
@@ -106,11 +115,30 @@ func (c *Column) SetWidth(n int) *Column {
 	return c
 }
 
+// SetWidthPercent pins the column to p percent of the table's target
+// width. Mutually exclusive with SetWidth — last setter wins. p must
+// be in (0, 100]; out-of-range values clear the percent form.
+func (c *Column) SetWidthPercent(p int) *Column {
+	c.set &^= cWidth
+	c.width = 0
+	if p <= 0 || p > 100 {
+		c.set &^= cWidthPct
+		c.widthPercent = 0
+		return c
+	}
+	c.widthPercent = p
+	c.set |= cWidthPct
+	return c
+}
+
 // SetMin sets a lower bound on the column's content width. The
 // effective minimum is max(contentMinimum, userMinimum), so this
 // never shrinks the column below what the content genuinely requires.
-// A value of n <= 0 clears the override.
+// A value of n <= 0 clears the override. Also clears any percent form
+// previously set via SetMinPercent.
 func (c *Column) SetMin(n int) *Column {
+	c.set &^= cMinPct
+	c.minPercent = 0
 	if n <= 0 {
 		c.set &^= cMin
 		c.minW = 0
@@ -121,10 +149,29 @@ func (c *Column) SetMin(n int) *Column {
 	return c
 }
 
+// SetMinPercent sets the column's min-width floor as p percent of the
+// table's target width. Mutually exclusive with SetMin — last setter
+// wins.
+func (c *Column) SetMinPercent(p int) *Column {
+	c.set &^= cMin
+	c.minW = 0
+	if p <= 0 || p > 100 {
+		c.set &^= cMinPct
+		c.minPercent = 0
+		return c
+	}
+	c.minPercent = p
+	c.set |= cMinPct
+	return c
+}
+
 // SetMax caps the column's content width at n. The solver honors the
 // cap even when content would naturally prefer more space; content
-// wraps to fit. A value of n <= 0 clears the cap.
+// wraps to fit. A value of n <= 0 clears the cap. Also clears any
+// percent form previously set via SetMaxPercent.
 func (c *Column) SetMax(n int) *Column {
+	c.set &^= cMaxPct
+	c.maxPercent = 0
 	if n <= 0 {
 		c.set &^= cMax
 		c.maxW = 0
@@ -132,6 +179,22 @@ func (c *Column) SetMax(n int) *Column {
 	}
 	c.maxW = n
 	c.set |= cMax
+	return c
+}
+
+// SetMaxPercent caps the column's content width at p percent of the
+// table's target width. Mutually exclusive with SetMax — last setter
+// wins.
+func (c *Column) SetMaxPercent(p int) *Column {
+	c.set &^= cMax
+	c.maxW = 0
+	if p <= 0 || p > 100 {
+		c.set &^= cMaxPct
+		c.maxPercent = 0
+		return c
+	}
+	c.maxPercent = p
+	c.set |= cMaxPct
 	return c
 }
 
@@ -248,16 +311,28 @@ func (c *Column) Style(css string) *Column {
 func (c *Column) applyCSSDecl(prop, val string) {
 	switch prop {
 	case "width":
-		if n, ok := parsePositiveInt(val); ok {
-			c.SetWidth(n)
+		if n, pct, ok := parseWidthOrPercent(val); ok {
+			if pct {
+				c.SetWidthPercent(n)
+			} else {
+				c.SetWidth(n)
+			}
 		}
 	case "min-width":
-		if n, ok := parsePositiveInt(val); ok {
-			c.SetMin(n)
+		if n, pct, ok := parseWidthOrPercent(val); ok {
+			if pct {
+				c.SetMinPercent(n)
+			} else {
+				c.SetMin(n)
+			}
 		}
 	case "max-width":
-		if n, ok := parsePositiveInt(val); ok {
-			c.SetMax(n)
+		if n, pct, ok := parseWidthOrPercent(val); ok {
+			if pct {
+				c.SetMaxPercent(n)
+			} else {
+				c.SetMax(n)
+			}
 		}
 	case "flex":
 		if w, ok := parseNonNegFloat(val); ok {
@@ -276,14 +351,6 @@ func (c *Column) applyCSSDecl(prop, val string) {
 		}
 		applyDecl(c.style, prop, val)
 	}
-}
-
-func parsePositiveInt(s string) (int, bool) {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil || n < 1 {
-		return 0, false
-	}
-	return n, true
 }
 
 func parseNonNegFloat(s string) (float64, bool) {

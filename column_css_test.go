@@ -29,6 +29,56 @@ func TestColumnStyleSizeProperties(t *testing.T) {
 	}
 }
 
+// TestColumnPercentMaxWidth verifies that `max-width: N%` on a
+// no-wrap column caps the column at N percent of the table's target
+// width, clipping long content with an ellipsis inside the cell.
+func TestColumnPercentMaxWidth(t *testing.T) {
+	tbl := NewTable(WithTargetWidth(100))
+	tbl.Column(0).Style("white-space: nowrap; max-width: 20%")
+	r := tbl.AddRow()
+	r.AddCell(WithContent(strings.Repeat("x", 60)))
+	r.AddCell(WithContent("short"))
+
+	l := Layout(tbl, Measure(tbl))
+	if l.colAssigned[0] > 20 {
+		t.Errorf("col 0 width = %d, want <= 20 (max-width: 20%% of 100)", l.colAssigned[0])
+	}
+}
+
+// TestColumnPercentMinWidth verifies that `min-width: N%` on a column
+// raises the floor so a short cell still claims that share of the
+// target.
+func TestColumnPercentMinWidth(t *testing.T) {
+	tbl := NewTable(WithTargetWidth(100))
+	tbl.Column(0).Style("min-width: 30%")
+	r := tbl.AddRow()
+	r.AddCell(WithContent("x"))
+	r.AddCell(WithContent(strings.Repeat("y", 50)))
+
+	l := Layout(tbl, Measure(tbl))
+	if l.colAssigned[0] < 30 {
+		t.Errorf("col 0 width = %d, want >= 30 (min-width: 30%% of 100)", l.colAssigned[0])
+	}
+}
+
+// TestColumnPercentSwitchesAbsolute verifies that setting an absolute
+// width after a percent clears the percent (and vice versa) — the
+// "last setter wins" invariant advertised on the setters.
+func TestColumnPercentSwitchesAbsolute(t *testing.T) {
+	col := NewTable().Column(0)
+	col.SetMaxPercent(50).SetMax(12)
+	if col.set&cMaxPct != 0 {
+		t.Errorf("percent flag should be cleared after SetMax")
+	}
+	if col.Max() != 12 {
+		t.Errorf("Max() = %d, want 12", col.Max())
+	}
+	col.SetMaxPercent(40)
+	if col.set&cMax != 0 {
+		t.Errorf("abs flag should be cleared after SetMaxPercent")
+	}
+}
+
 func TestColumnStyleTextAlignEquivalentToSetAlign(t *testing.T) {
 	tbl := NewTable()
 	tbl.Column(0).Style("text-align: right")
