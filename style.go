@@ -147,11 +147,12 @@ func (s *Style) contentAttrs() []color.Attribute {
 	return attrs
 }
 
-// parseCSS parses a CSS-like declaration block (e.g.
-// "color: red; background: blue; font-weight: bold") into s. Unknown
-// properties are silently ignored so future additions do not break
-// existing callers. Colons inside unknown values are tolerated.
-func parseCSS(css string, s *Style) {
+// iterateCSS invokes visit for every well-formed "prop: val"
+// declaration in a CSS-like block. Property names are lower-cased and
+// trimmed; values are trimmed. Declarations missing a colon or with
+// an empty property are skipped silently, letting callers tolerate
+// malformed input gracefully.
+func iterateCSS(css string, visit func(prop, val string)) {
 	for _, decl := range strings.Split(css, ";") {
 		decl = strings.TrimSpace(decl)
 		if decl == "" {
@@ -162,9 +163,22 @@ func parseCSS(css string, s *Style) {
 			continue
 		}
 		prop := strings.ToLower(strings.TrimSpace(decl[:colon]))
+		if prop == "" {
+			continue
+		}
 		val := strings.TrimSpace(decl[colon+1:])
-		applyDecl(s, prop, val)
+		visit(prop, val)
 	}
+}
+
+// parseCSS parses a CSS-like declaration block (e.g.
+// "color: red; background: blue; font-weight: bold") into s. Unknown
+// properties are silently ignored so future additions do not break
+// existing callers. Colons inside unknown values are tolerated.
+func parseCSS(css string, s *Style) {
+	iterateCSS(css, func(prop, val string) {
+		applyDecl(s, prop, val)
+	})
 }
 
 func applyDecl(s *Style, prop, val string) {

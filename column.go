@@ -231,19 +231,7 @@ func (c *Column) HasAlign() bool {
 //
 // Unrecognized properties and unparseable values are silently ignored.
 func (c *Column) Style(css string) *Column {
-	for _, decl := range strings.Split(css, ";") {
-		decl = strings.TrimSpace(decl)
-		if decl == "" {
-			continue
-		}
-		colon := strings.Index(decl, ":")
-		if colon < 0 {
-			continue
-		}
-		prop := strings.ToLower(strings.TrimSpace(decl[:colon]))
-		val := strings.TrimSpace(decl[colon+1:])
-		c.applyCSSDecl(prop, val)
-	}
+	iterateCSS(css, c.applyCSSDecl)
 	return c
 }
 

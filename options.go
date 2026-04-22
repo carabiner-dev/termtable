@@ -3,7 +3,10 @@
 
 package termtable
 
-import "io"
+import (
+	"io"
+	"strings"
+)
 
 // TableOption configures a *Table.
 type TableOption func(*Table)
@@ -62,20 +65,36 @@ func WithTablePadding(p Padding) TableOption {
 // WithTableStyle sets table-wide style defaults via a CSS-like
 // declaration block, e.g.
 //
-//	WithTableStyle("color: white; background: blue; border-color: cyan")
+//	WithTableStyle("color: white; background: blue; border-style: double; border-color: cyan")
 //
-// Supported properties: color, background (background-color),
-// border-color, font-weight (bold|normal), font-style (italic|normal),
-// text-decoration (underline|line-through|none). Color values may be
-// named (e.g. "red", "bright-cyan"), a hex string (#rrggbb), or
-// rgb(r,g,b). Unknown properties and unrecognized values are
-// silently ignored.
+// Supported properties:
+//
+//   - color, background (background-color), border-color: color values
+//     as named colors ("red", "bright-cyan"), hex ("#rrggbb"), or
+//     rgb(r,g,b).
+//   - font-weight: bold | normal
+//   - font-style: italic | normal
+//   - text-decoration: underline | line-through | none
+//   - border-style: single | double | heavy | rounded | ascii | none —
+//     selects the BorderSet used for the table, equivalent to calling
+//     WithBorder with the corresponding constructor (SingleLine,
+//     DoubleLine, HeavyLine, RoundedLine, ASCIILine, NoBorder).
+//
+// Unknown properties and unrecognized values are silently ignored.
 func WithTableStyle(css string) TableOption {
 	return func(t *Table) {
-		if t.style == nil {
-			t.style = &Style{}
-		}
-		parseCSS(css, t.style)
+		iterateCSS(css, func(prop, val string) {
+			if prop == "border-style" {
+				if b, ok := borderSetByName(strings.ToLower(val)); ok {
+					t.opts.border = b
+				}
+				return
+			}
+			if t.style == nil {
+				t.style = &Style{}
+			}
+			applyDecl(t.style, prop, val)
+		})
 	}
 }
 
