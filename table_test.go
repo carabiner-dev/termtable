@@ -145,22 +145,202 @@ func withFakeTTY(t *testing.T, width int, ok bool) {
 	t.Cleanup(func() { terminalWidthProbe = saved })
 }
 
-// TestResolvedTargetWidthDefaultInWideTTY verifies that a table built
-// with no WithTargetWidth uses the 80-column default even when the
-// terminal is wider. The TTY is a ceiling, not a target.
-func TestResolvedTargetWidthDefaultInWideTTY(t *testing.T) {
+// TestResolvedTargetWidthDefaultFillsNinetyPercent verifies that a
+// table built with no width preference grows to 90% of the attached
+// terminal — 80 is the floor, not the target.
+func TestResolvedTargetWidthDefaultFillsNinetyPercent(t *testing.T) {
 	t.Setenv("COLUMNS", "")
 	withFakeTTY(t, 200, true)
 
 	tbl := NewTable()
-	if got := tbl.ResolvedTargetWidth(); got != defaultTargetWidth {
-		t.Errorf("default width = %d, want %d", got, defaultTargetWidth)
+	if got := tbl.ResolvedTargetWidth(); got != 180 {
+		t.Errorf("default width = %d, want 180 (90%% of 200)", got)
 	}
 }
 
-// TestResolvedTargetWidthDefaultCappedByNarrowTTY verifies that when
-// the screen is narrower than the 80-column default, the default is
-// capped to the screen.
+// TestResolvedTargetWidthDefaultMinFloor verifies that on medium-width
+// terminals where 90% would drop below 80, the 80-column floor takes
+// over.
+func TestResolvedTargetWidthDefaultMinFloor(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 85, true)
+
+	tbl := NewTable()
+	if got := tbl.ResolvedTargetWidth(); got != defaultTargetWidth {
+		// 90% of 85 = 76, below the 80 floor — floor wins.
+		t.Errorf("default width = %d, want %d (80 floor beats 76)", got, defaultTargetWidth)
+	}
+}
+
+// TestLayoutContentShrinksToNatural verifies that when content is
+// narrower than max-width but wider than min-width, the table renders
+// at its natural (content-desired) width — not padded out to the
+// max-width ceiling.
+func TestLayoutContentShrinksToNatural(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable()
+	// Short content: natural width ~= "hello" + "world" + overhead = ~15.
+	// min-width default is 80, so we should land at 80 — not the 180
+	// max-width ceiling.
+	r := tbl.AddRow()
+	r.AddCell(WithContent("hello"))
+	r.AddCell(WithContent("world"))
+
+	out := tbl.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	width := DisplayWidth(lines[0])
+	if width != 80 {
+		t.Errorf("rendered width = %d, want 80 (min-width floor, not max-width 180)", width)
+	}
+}
+
+// TestLayoutContentGrowsToMax verifies that content wider than the
+// min-width but narrower than max-width stretches the table to its
+// natural width.
+func TestLayoutContentGrowsToMax(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable()
+	// Fabricate content wide enough to land between 80 and 180.
+	big := strings.Repeat("x", 60)
+	r := tbl.AddRow()
+	r.AddCell(WithContent(big))
+	r.AddCell(WithContent(big))
+
+	out := tbl.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	width := DisplayWidth(lines[0])
+	// Natural width = 60 + 60 + overhead(7) = 127. Within [80, 180].
+	if width != 127 {
+		t.Errorf("rendered width = %d, want 127 (content-natural)", width)
+	}
+}
+
+// TestLayoutContentClampedToMax verifies that content wider than the
+// max-width ceiling causes the layout to cap at max-width — not
+// overflow the screen.
+func TestLayoutContentClampedToMax(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable()
+	// Content so wide that natural would exceed 180.
+	big := strings.Repeat("x", 120)
+	r := tbl.AddRow()
+	r.AddCell(WithContent(big))
+	r.AddCell(WithContent(big))
+
+	out := tbl.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	width := DisplayWidth(lines[0])
+	if width != 180 {
+		t.Errorf("rendered width = %d, want 180 (max-width ceiling)", width)
+	}
+}
+
+// TestWithMinWidthOverride verifies that an explicit WithMinWidth
+// raises (or lowers) the floor.
+func TestWithMinWidthOverride(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable(WithMinWidth(100))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("tiny"))
+
+	out := tbl.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if w := DisplayWidth(lines[0]); w != 100 {
+		t.Errorf("rendered width = %d, want 100 (explicit min-width)", w)
+	}
+}
+
+// TestWithMaxWidthOverride verifies that an explicit WithMaxWidth
+// lowers the ceiling.
+func TestWithMaxWidthOverride(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable(WithMaxWidth(50))
+	big := strings.Repeat("x", 80)
+	r := tbl.AddRow()
+	r.AddCell(WithContent(big))
+	r.AddCell(WithContent(big))
+
+	out := tbl.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	// Explicit max-width=50 beats the default min-width=80 per CSS:
+	// min ≤ max is required; when max < min, min still wins. But here
+	// the user set max explicitly, so it overrides the default floor.
+	// In practice: the user's explicit max wins.
+	if w := DisplayWidth(lines[0]); w > 80 {
+		t.Errorf("rendered width = %d, want <= 80 (explicit max clamps)", w)
+	}
+}
+
+// TestCSSMinMaxWidth verifies that `min-width` and `max-width` in the
+// table CSS drive the same options.
+func TestCSSMinMaxWidth(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable(WithTableStyle("min-width: 60; max-width: 50%"))
+	r := tbl.AddRow()
+	r.AddCell(WithContent(strings.Repeat("x", 200)))
+
+	out := tbl.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	// 50% of 200 = 100, max-width clamps to 100.
+	if w := DisplayWidth(lines[0]); w != 100 {
+		t.Errorf("rendered width = %d, want 100 (max-width 50%%)", w)
+	}
+}
+
+// TestExplicitWidthBypassesDefaults verifies that WithTargetWidth
+// still pins to the requested value: the default min/max bounds do
+// NOT clamp an explicit target (matches user expectation and preserves
+// backwards compatibility).
+func TestExplicitWidthBypassesDefaults(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable(WithTargetWidth(50))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+
+	out := tbl.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if w := DisplayWidth(lines[0]); w != 50 {
+		t.Errorf("rendered width = %d, want 50 (explicit width bypasses default min 80)", w)
+	}
+}
+
+// TestExplicitWidthClampedByExplicitMax verifies that an explicit max
+// still clamps an explicit width — CSS-style composition of
+// explicitly-set bounds.
+func TestExplicitWidthClampedByExplicitMax(t *testing.T) {
+	t.Setenv("COLUMNS", "")
+	withFakeTTY(t, 200, true)
+
+	tbl := NewTable(WithTargetWidth(120), WithMaxWidth(90))
+	r := tbl.AddRow()
+	r.AddCell(WithContent("a"))
+	r.AddCell(WithContent("b"))
+
+	out := tbl.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if w := DisplayWidth(lines[0]); w != 90 {
+		t.Errorf("rendered width = %d, want 90 (explicit max overrides explicit width)", w)
+	}
+}
+
+// TestResolvedTargetWidthDefaultCappedByNarrowTTY verifies that on a
+// screen narrower than the 80-column floor, the terminal width wins:
+// the floor never exceeds the physical screen.
 func TestResolvedTargetWidthDefaultCappedByNarrowTTY(t *testing.T) {
 	t.Setenv("COLUMNS", "")
 	withFakeTTY(t, 40, true)

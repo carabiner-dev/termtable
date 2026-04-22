@@ -32,9 +32,11 @@ func WithTableID(id string) TableOption {
 
 // WithTargetWidth pins the layout target width to w terminal columns.
 // When unset, the table reads the COLUMNS environment variable, then
-// falls back to 80. In every case the resolved value is clamped to the
-// attached terminal's width so output never overflows the screen;
-// pipes and other non-interactive sinks leave the value uncapped.
+// falls back to the default rule — fill 90% of the attached screen
+// with 80 as the floor. In every case the resolved value is clamped
+// to the attached terminal's width so output never overflows the
+// screen; pipes and other non-interactive sinks leave the value
+// uncapped.
 //
 // Mutually exclusive with WithTargetWidthPercent — last setter wins.
 func WithTargetWidth(w int) TableOption {
@@ -64,6 +66,62 @@ func WithTargetWidthPercent(p int) TableOption {
 		t.opts.targetWidthPercent = p
 		t.opts.targetWidthPercentSet = true
 		t.opts.targetWidthSet = false
+	}
+}
+
+// WithMinWidth sets the CSS-style min-width floor for the table. When
+// no explicit WithTargetWidth is supplied, the layout size still never
+// drops below n columns. Non-positive n is ignored. Mutually exclusive
+// with WithMinWidthPercent — last setter wins.
+func WithMinWidth(n int) TableOption {
+	return func(t *Table) {
+		if n <= 0 {
+			return
+		}
+		t.opts.minWidth = n
+		t.opts.minWidthSet = true
+		t.opts.minWidthPercentSet = false
+	}
+}
+
+// WithMinWidthPercent sets the min-width floor as a percentage of the
+// attached screen width. Mutually exclusive with WithMinWidth.
+func WithMinWidthPercent(p int) TableOption {
+	return func(t *Table) {
+		if p <= 0 {
+			return
+		}
+		t.opts.minWidthPercent = p
+		t.opts.minWidthPercentSet = true
+		t.opts.minWidthSet = false
+	}
+}
+
+// WithMaxWidth sets the CSS-style max-width ceiling for the table.
+// When no explicit WithTargetWidth is supplied, the layout size still
+// never exceeds n columns. Non-positive n is ignored. Mutually
+// exclusive with WithMaxWidthPercent — last setter wins.
+func WithMaxWidth(n int) TableOption {
+	return func(t *Table) {
+		if n <= 0 {
+			return
+		}
+		t.opts.maxWidth = n
+		t.opts.maxWidthSet = true
+		t.opts.maxWidthPercentSet = false
+	}
+}
+
+// WithMaxWidthPercent sets the max-width ceiling as a percentage of
+// the attached screen width. Mutually exclusive with WithMaxWidth.
+func WithMaxWidthPercent(p int) TableOption {
+	return func(t *Table) {
+		if p <= 0 {
+			return
+		}
+		t.opts.maxWidthPercent = p
+		t.opts.maxWidthPercentSet = true
+		t.opts.maxWidthSet = false
 	}
 }
 
@@ -150,6 +208,32 @@ func WithTableStyle(css string) TableOption {
 						t.opts.targetWidth = n
 						t.opts.targetWidthSet = true
 						t.opts.targetWidthPercentSet = false
+					}
+				}
+				return
+			case "min-width":
+				if n, pct, ok := parseWidthOrPercent(val); ok {
+					if pct {
+						t.opts.minWidthPercent = n
+						t.opts.minWidthPercentSet = true
+						t.opts.minWidthSet = false
+					} else {
+						t.opts.minWidth = n
+						t.opts.minWidthSet = true
+						t.opts.minWidthPercentSet = false
+					}
+				}
+				return
+			case "max-width":
+				if n, pct, ok := parseWidthOrPercent(val); ok {
+					if pct {
+						t.opts.maxWidthPercent = n
+						t.opts.maxWidthPercentSet = true
+						t.opts.maxWidthSet = false
+					} else {
+						t.opts.maxWidth = n
+						t.opts.maxWidthSet = true
+						t.opts.maxWidthPercentSet = false
 					}
 				}
 				return

@@ -31,8 +31,9 @@
 //     phase; option hooks exist but have no effect yet.
 //   - Terminal width resolves in this order: WithTargetWidth,
 //     WithTargetWidthPercent (as a fraction of the detected terminal
-//     width, COLUMNS, or 80), the COLUMNS environment variable, then an
-//     80-column default. The resolved value is clamped to the attached
+//     width, COLUMNS, or 80), the COLUMNS environment variable, then
+//     the default rule — fill 90% of the attached screen with 80 as
+//     the floor. The resolved value is clamped to the attached
 //     terminal's width when one is detected, so output never exceeds
 //     the physical screen; writing to a pipe leaves the value uncapped.
 package termtable
