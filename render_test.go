@@ -171,11 +171,14 @@ func TestRenderEmojiKeepsGridAligned(t *testing.T) {
 
 	out := tbl.String()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	target := DisplayWidth(lines[0])
+	// Measure with the renderer's effective emoji mode — Conservative
+	// pads composite clusters wider than Grapheme, and alignment is
+	// defined relative to whichever mode produced the layout.
+	mode := tbl.resolveEmojiWidth()
+	target := displayWidthFor(lines[0], mode)
 	for i, ln := range lines {
-		if DisplayWidth(ln) != target {
-			t.Errorf("line %d width %d, want %d: %q",
-				i, DisplayWidth(ln), target, ln)
+		if got := displayWidthFor(ln, mode); got != target {
+			t.Errorf("line %d width %d, want %d: %q", i, got, target, ln)
 		}
 	}
 }
