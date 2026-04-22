@@ -20,14 +20,11 @@ func TestNewCellDefaults(t *testing.T) {
 	if c.Align() != AlignLeft {
 		t.Errorf("Align = %v, want AlignLeft", c.Align())
 	}
-	if !c.opts.wrap {
-		t.Error("wrap default should be true")
-	}
-	if !c.opts.trim {
-		t.Error("trim default should be true")
-	}
-	if c.opts.maxLines != 0 {
-		t.Errorf("maxLines default = %d, want 0 (unbounded)", c.opts.maxLines)
+	// Layout knobs live on Style now. A default-constructed cell has
+	// no Style set, so every field is inherited (effective values
+	// come from the Table cascade at render time).
+	if c.style != nil {
+		t.Errorf("default cell should have no Style, got %+v", c.style)
 	}
 }
 
@@ -54,11 +51,20 @@ func TestCellOptionsApply(t *testing.T) {
 	if c.Align() != AlignRight {
 		t.Errorf("Align = %v", c.Align())
 	}
-	if c.opts.wrap || c.opts.trim {
-		t.Error("wrap/trim should be false")
+	if c.style == nil {
+		t.Fatal("options should have populated the cell's Style")
 	}
-	if c.opts.maxLines != 5 {
-		t.Errorf("maxLines = %d", c.opts.maxLines)
+	if c.style.wrap || c.style.set&sWrap == 0 {
+		t.Errorf("wrap should be false (set=%v wrap=%v)",
+			c.style.set&sWrap != 0, c.style.wrap)
+	}
+	if c.style.trim || c.style.set&sTrim == 0 {
+		t.Errorf("trim should be false (set=%v trim=%v)",
+			c.style.set&sTrim != 0, c.style.trim)
+	}
+	if c.style.maxLines != 5 || c.style.set&sMaxLines == 0 {
+		t.Errorf("maxLines should be 5 (set=%v val=%d)",
+			c.style.set&sMaxLines != 0, c.style.maxLines)
 	}
 }
 

@@ -283,22 +283,10 @@ func (rc *renderContext) effectiveCellAlign(cell *Cell) Alignment {
 	return AlignLeft
 }
 
-// effectiveCellStyle cascades table → column → row → cell styles
-// into a freshly-allocated Style whose fields are the union of the
-// set fields at each level, with lower-level overrides winning. Both
-// visual attributes (color, bold, etc.) and alignment flow through
-// this one cascade.
+// effectiveCellStyle delegates to Table.effectiveCellStyle so the
+// same cascade logic is used by layout and render.
 func (rc *renderContext) effectiveCellStyle(cell *Cell) *Style {
-	eff := &Style{}
-	eff.merge(rc.t.style)
-	if col := rc.t.Column(cell.gridCol); col != nil {
-		eff.merge(col.style)
-	}
-	if row := rc.t.rowBodyFor(cell); row != nil {
-		eff.merge(row.style)
-	}
-	eff.merge(cell.style)
-	return eff
+	return rc.t.effectiveCellStyle(cell)
 }
 
 // cellSubLineAtBorder computes the sub-line index within a rowspan

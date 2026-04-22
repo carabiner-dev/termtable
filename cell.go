@@ -48,28 +48,13 @@ type Cell struct {
 	sectionRow int
 	gridCol    int
 
-	opts cellOptions
-
-	// style is the cell's local style. It is merged over the row's
-	// style and the table's style to produce the effective style for
-	// rendering. nil means "inherit everything".
+	// style is the cell's local style. It is merged over the row's,
+	// column's, and table's styles to produce the effective style
+	// for rendering. nil means "inherit everything".
 	style *Style
 
 	// adopted is set once the cell belongs to a row.
 	adopted bool
-}
-
-type cellOptions struct {
-	wrap     bool
-	trim     bool
-	maxLines int // 0 = unbounded; reserved hook for a later phase
-}
-
-func defaultCellOptions() cellOptions {
-	return cellOptions{
-		wrap: true,
-		trim: true,
-	}
 }
 
 // NewCell constructs a detached cell with the given options. A detached
@@ -79,7 +64,6 @@ func NewCell(opts ...CellOption) *Cell {
 	c := &Cell{
 		colSpan: 1,
 		rowSpan: 1,
-		opts:    defaultCellOptions(),
 	}
 	for _, o := range opts {
 		o(c)

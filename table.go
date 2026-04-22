@@ -331,6 +331,24 @@ func (t *Table) WriteTo(w io.Writer) (int64, error) {
 
 func (t *Table) elementID() string { return t.id }
 
+// effectiveCellStyle cascades table → column → row → cell styles
+// into a freshly-allocated Style. Every field that is set at any
+// level is copied through, with lower-level set fields overriding
+// upper-level ones. Used by the layout solver and renderer to
+// resolve per-cell display attributes.
+func (t *Table) effectiveCellStyle(c *Cell) *Style {
+	eff := &Style{}
+	eff.merge(t.style)
+	if col := t.Column(c.gridCol); col != nil {
+		eff.merge(col.style)
+	}
+	if row := t.rowBodyFor(c); row != nil {
+		eff.merge(row.style)
+	}
+	eff.merge(c.style)
+	return eff
+}
+
 // ---------------------------------------------------------------------
 // Helpers used by rowBody / cell attachment
 // ---------------------------------------------------------------------

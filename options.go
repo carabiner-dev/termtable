@@ -204,24 +204,48 @@ func WithVAlign(v VerticalAlignment) CellOption {
 }
 
 // WithWrap toggles automatic word-wrapping on whitespace. Default is
-// true.
+// true (multi-line). Equivalent to setting CSS
+// white-space: normal (wrap=true) or nowrap (wrap=false).
+// Participates in the Style cascade — a row or column setting the
+// same property forces every inheriting cell.
 func WithWrap(enable bool) CellOption {
-	return func(c *Cell) { c.opts.wrap = enable }
+	return func(c *Cell) {
+		ensureStyle(c).wrap = enable
+		c.style.set |= sWrap
+	}
 }
 
-// WithTrim toggles ellipsis-based trimming when a cell's wrapped
-// content exceeds its allotted height. Default is true. In Phase 3 no
-// height cap is active, so this option has no observable effect yet;
-// Phase 4+ will plumb the cap.
+// WithTrim toggles ellipsis-based trimming when a cell's content
+// must be cut (either because single-line content overflows the
+// column, or because a line-clamp limit was exceeded). Default is
+// true. Equivalent to CSS text-overflow: ellipsis (trim=true) or
+// clip (trim=false).
 func WithTrim(enable bool) CellOption {
-	return func(c *Cell) { c.opts.trim = enable }
+	return func(c *Cell) {
+		ensureStyle(c).trim = enable
+		c.style.set |= sTrim
+	}
 }
 
-// WithMaxLines caps the cell's wrapped content to at most n lines. A
-// value of 0 means unbounded (the default). Plumbed for Phase 4+; has
-// no observable effect yet.
+// WithSingleLine is a shorthand for WithWrap(false). Long content
+// renders on one line; if trim is enabled (the default) it is
+// truncated with an ellipsis.
+func WithSingleLine() CellOption { return WithWrap(false) }
+
+// WithMultiLine is a shorthand for WithWrap(true). Useful when a
+// row or column has forced single-line mode and a particular cell
+// needs to opt back into wrapping.
+func WithMultiLine() CellOption { return WithWrap(true) }
+
+// WithMaxLines caps the cell's wrapped content to at most n lines.
+// A value of 0 means unbounded (the default). Equivalent to CSS
+// line-clamp: N. When the limit fires and trim is enabled, the
+// final kept line ends in an ellipsis.
 func WithMaxLines(n int) CellOption {
-	return func(c *Cell) { c.opts.maxLines = n }
+	return func(c *Cell) {
+		ensureStyle(c).maxLines = n
+		c.style.set |= sMaxLines
+	}
 }
 
 // WithCellStyle sets style properties on the cell, cascaded over the

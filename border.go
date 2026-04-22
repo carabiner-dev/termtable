@@ -173,7 +173,7 @@ func borderSetByName(name string) (BorderSet, bool) {
 		return RoundedLine(), true
 	case "ascii":
 		return ASCIILine(), true
-	case "none":
+	case cssNone:
 		return NoBorder(), true
 	}
 	return BorderSet{}, false

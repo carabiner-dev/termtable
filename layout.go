@@ -428,7 +428,8 @@ func computeRowHeights(t *Table, assigned []int, wrapped map[*Cell][]string) []i
 			// here we just fall back to whatever bytes were buffered.
 			text = c.content
 		}
-		return Wrap(naturalLinesFor(text, mode), w, c.opts.wrap, c.opts.trim, c.opts.maxLines)
+		wrap, trim, maxLines := effectiveWrapParams(t, c)
+		return Wrap(naturalLinesFor(text, mode), w, wrap, trim, maxLines)
 	}
 
 	headerOffset := 0
@@ -484,6 +485,26 @@ func computeRowHeights(t *Table, assigned []int, wrapped map[*Cell][]string) []i
 	}
 
 	return heights
+}
+
+// effectiveWrapParams resolves the wrap/trim/maxLines knobs for a
+// cell through the Style cascade. Fields not set at any level fall
+// back to their package defaults (wrap=true, trim=true,
+// maxLines=0 for unbounded).
+func effectiveWrapParams(t *Table, c *Cell) (wrap, trim bool, maxLines int) {
+	style := t.effectiveCellStyle(c)
+	wrap = true
+	trim = true
+	if style.set&sWrap != 0 {
+		wrap = style.wrap
+	}
+	if style.set&sTrim != 0 {
+		trim = style.trim
+	}
+	if style.set&sMaxLines != 0 {
+		maxLines = style.maxLines
+	}
+	return wrap, trim, maxLines
 }
 
 // absRowOf returns the absolute row index of cell c across the table

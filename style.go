@@ -32,8 +32,25 @@ type Style struct {
 	underline bool
 	strike    bool
 
+	// Layout-related fields. Cascade the same way as colour
+	// attributes so a row or column can force single-line rendering
+	// on all its cells. Defaults (when unset at every level):
+	// wrap=true, trim=true, maxLines=0 (unbounded).
+	wrap     bool
+	trim     bool
+	maxLines int
+
 	set styleField
 }
+
+// Shared CSS keyword spellings — promoted to constants because
+// goconst grumbles when identical literals appear across several
+// unrelated property handlers.
+const (
+	cssNormal = "normal"
+	cssAuto   = "auto"
+	cssNone   = "none"
+)
 
 // styleField is a bitmask indicating which Style fields have been set
 // (as opposed to inherited or defaulted).
@@ -49,6 +66,9 @@ const (
 	sStrike
 	sAlign
 	sVAlign
+	sWrap
+	sTrim
+	sMaxLines
 )
 
 // isEmpty reports whether s contributes nothing to output.
@@ -97,6 +117,18 @@ func (s *Style) merge(src *Style) {
 	if src.set&sVAlign != 0 {
 		s.valign = src.valign
 		s.set |= sVAlign
+	}
+	if src.set&sWrap != 0 {
+		s.wrap = src.wrap
+		s.set |= sWrap
+	}
+	if src.set&sTrim != 0 {
+		s.trim = src.trim
+		s.set |= sTrim
+	}
+	if src.set&sMaxLines != 0 {
+		s.maxLines = src.maxLines
+		s.set |= sMaxLines
 	}
 }
 
@@ -209,7 +241,7 @@ func applyDecl(s *Style, prop, val string) {
 		case "bold":
 			s.bold = true
 			s.set |= sBold
-		case "normal":
+		case cssNormal:
 			s.bold = false
 			s.set |= sBold
 		}
@@ -218,7 +250,7 @@ func applyDecl(s *Style, prop, val string) {
 		case "italic":
 			s.italic = true
 			s.set |= sItalic
-		case "normal":
+		case cssNormal:
 			s.italic = false
 			s.set |= sItalic
 		}
@@ -248,6 +280,35 @@ func applyDecl(s *Style, prop, val string) {
 			s.valign = VAlignBottom
 			s.set |= sVAlign
 		}
+	case "white-space":
+		switch strings.ToLower(val) {
+		case cssNormal, "pre-line":
+			s.wrap = true
+			s.set |= sWrap
+		case "nowrap", "pre":
+			s.wrap = false
+			s.set |= sWrap
+		}
+	case "text-overflow":
+		switch strings.ToLower(val) {
+		case "ellipsis":
+			s.trim = true
+			s.set |= sTrim
+		case "clip":
+			s.trim = false
+			s.set |= sTrim
+		}
+	case "line-clamp", "-webkit-line-clamp":
+		v := strings.ToLower(val)
+		if v == cssNone || v == cssAuto {
+			s.maxLines = 0
+			s.set |= sMaxLines
+			return
+		}
+		if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && n >= 0 {
+			s.maxLines = n
+			s.set |= sMaxLines
+		}
 	}
 }
 
@@ -260,7 +321,7 @@ func applyTextDecoration(s *Style, val string) {
 		case "line-through":
 			s.strike = true
 			s.set |= sStrike
-		case "none":
+		case cssNone:
 			s.underline = false
 			s.strike = false
 			s.set |= sUnderline | sStrike

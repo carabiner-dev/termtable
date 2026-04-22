@@ -70,12 +70,20 @@ func wrapNaturalLine(runs []GraphemeRun, width int, wrap, trim bool) []outputLin
 	cum := cumulativeEsc(runs)
 	if !wrap {
 		sp := span{0, len(runs)}
-		if trim && lineDisplayWidth(runs) > width {
+		total := lineDisplayWidth(runs)
+		if total <= width {
+			return []outputLine{{runs: runs[sp.start:sp.end], startEsc: cum[sp.start]}}
+		}
+		// Content overflows its slot. When trim is enabled, reserve
+		// one column for the ellipsis; otherwise hard-clip to the
+		// full available width (CSS text-overflow: clip semantic).
+		if trim {
 			sp = clipSpanToWidth(runs, sp, width-1)
 			clipped := append([]GraphemeRun{}, runs[sp.start:sp.end]...)
 			clipped = append(clipped, GraphemeRun{Text: ellipsis, Width: 1})
 			return []outputLine{{runs: clipped, startEsc: cum[sp.start]}}
 		}
+		sp = clipSpanToWidth(runs, sp, width)
 		return []outputLine{{runs: runs[sp.start:sp.end], startEsc: cum[sp.start]}}
 	}
 	widths := make([]int, len(runs))
