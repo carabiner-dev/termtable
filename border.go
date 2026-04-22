@@ -160,7 +160,10 @@ func NoBorder() BorderSet {
 
 // borderSetByName resolves a CSS border-style keyword to its
 // BorderSet constructor. Returns the zero value and false for
-// unknown names.
+// unknown names. Note that CSS's "border-style: none" is NOT
+// handled here — it sets the table's default edge directive to
+// BorderEdgeNone rather than swapping in a BorderSet. Callers that
+// want the spaces-everywhere behavior should use "hidden".
 func borderSetByName(name string) (BorderSet, bool) {
 	switch name {
 	case "single":
@@ -173,7 +176,7 @@ func borderSetByName(name string) (BorderSet, bool) {
 		return RoundedLine(), true
 	case "ascii":
 		return ASCIILine(), true
-	case cssNone:
+	case cssHidden:
 		return NoBorder(), true
 	}
 	return BorderSet{}, false
