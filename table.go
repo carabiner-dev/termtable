@@ -9,10 +9,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
 
-// defaultTargetWidth is used when no WithTargetWidth is supplied and no
-// COLUMNS environment variable is set.
+// defaultTargetWidth is used as the last-resort target width when no
+// explicit WithTargetWidth is supplied, COLUMNS is unset or invalid,
+// and no connected terminal can be queried for its size.
 const defaultTargetWidth = 80
 
 // Table is the root element. It owns the column list, the header / body
@@ -55,12 +58,14 @@ type Table struct {
 }
 
 type tableOptions struct {
-	targetWidth    int
-	targetWidthSet bool
-	border         BorderSet
-	padding        Padding
-	emojiWidth     EmojiWidthMode
-	spanOverwrite  bool
+	targetWidth           int
+	targetWidthSet        bool
+	targetWidthPercent    int
+	targetWidthPercentSet bool
+	border                BorderSet
+	padding               Padding
+	emojiWidth            EmojiWidthMode
+	spanOverwrite         bool
 }
 
 func defaultTableOptions() tableOptions {
@@ -291,18 +296,88 @@ func (t *Table) InBounds(r, c int) bool {
 }
 
 // ResolvedTargetWidth returns the target width the table will use for
-// layout. It resolves in this order: explicit WithTargetWidth, then
-// the COLUMNS environment variable, then defaultTargetWidth.
+// layout. The resolution cascade, in order of preference:
+//
+//  1. explicit WithTargetWidth(n)
+//  2. WithTargetWidthPercent(p) — computed against the terminal width
+//     when detected, else COLUMNS, else 80
+//  3. the COLUMNS environment variable, when it parses to a positive int
+//  4. defaultTargetWidth (80)
+//
+// Whatever value the cascade produces is then clamped to the attached
+// terminal's width when one is detected (stdout or stderr, via
+// golang.org/x/term), so output never exceeds the physical screen.
+// Pipes and other non-interactive sinks leave the value uncapped.
 func (t *Table) ResolvedTargetWidth() int {
-	if t.opts.targetWidthSet && t.opts.targetWidth > 0 {
-		return t.opts.targetWidth
-	}
-	if v := os.Getenv("COLUMNS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
+	tty, ttyOK := terminalWidthProbe()
+
+	want := defaultTargetWidth
+	switch {
+	case t.opts.targetWidthSet && t.opts.targetWidth > 0:
+		want = t.opts.targetWidth
+	case t.opts.targetWidthPercentSet && t.opts.targetWidthPercent > 0:
+		want = percentOfScreen(t.opts.targetWidthPercent, tty, ttyOK)
+	default:
+		if v := os.Getenv("COLUMNS"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				want = n
+			}
 		}
 	}
-	return defaultTargetWidth
+
+	if ttyOK && want > tty {
+		return tty
+	}
+	return want
+}
+
+// percentOfScreen returns p% of the screen width, using the detected
+// terminal width when available, then COLUMNS, then defaultTargetWidth
+// as the base. The result is floored and guaranteed to be at least 1 —
+// a 0-column target would crash the layout solver.
+func percentOfScreen(p, tty int, ttyOK bool) int {
+	base := defaultTargetWidth
+	switch {
+	case ttyOK && tty > 0:
+		base = tty
+	default:
+		if v := os.Getenv("COLUMNS"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				base = n
+			}
+		}
+	}
+	w := base * p / 100
+	if w < 1 {
+		return 1
+	}
+	return w
+}
+
+// terminalWidthProbe is the injection point for TTY-size detection.
+// Tests replace it to simulate a connected terminal of a given size.
+var terminalWidthProbe = detectTerminalWidth
+
+// detectTerminalWidth reports the attached terminal's column count when
+// stdout (or stderr as a fallback) is a TTY. The probe is silent: any
+// non-terminal fd or query failure returns (_, false) and the caller
+// falls through to the next resolution step.
+func detectTerminalWidth() (int, bool) {
+	for _, f := range []*os.File{os.Stdout, os.Stderr} {
+		if f == nil {
+			continue
+		}
+		fd := int(f.Fd()) //nolint:gosec // fd values always fit in int
+		if !term.IsTerminal(fd) {
+			continue
+		}
+		w, _, err := term.GetSize(fd)
+		if err != nil || w <= 0 {
+			continue
+		}
+		return w, true
+	}
+	return 0, false
 }
 
 // String renders the table to a string. Layout errors (e.g., a target
@@ -327,11 +402,19 @@ func (t *Table) LastRenderError() error { return t.lastRenderErr }
 // WriteTo renders the table to w. Returns the number of bytes written
 // and either a write error from w or a layout error (e.g.,
 // ErrTargetTooNarrow) — write errors take precedence when both occur.
+//
+// When the attached stdout or stderr is a terminal, every output line
+// is clipped to that terminal's width (with an ellipsis marking the
+// cut). Writes to pipes, files, or other non-interactive sinks pass
+// through unclipped.
 func (t *Table) WriteTo(w io.Writer) (int64, error) {
 	m := Measure(t)
 	l := Layout(t, m)
 	t.renderWarnings = append(t.renderWarnings[:0], l.warnings...)
 	out := renderTable(t, l, t.opts.border)
+	if tty, ok := terminalWidthProbe(); ok {
+		out = clipToTerminalWidth(out, tty, t.resolveEmojiWidth())
+	}
 	n, err := w.Write([]byte(out))
 	if err != nil {
 		return int64(n), err

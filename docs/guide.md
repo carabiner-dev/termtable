@@ -171,7 +171,7 @@ closes the sub-columns.
 Every constructor takes a variadic list of functional options
 named `With*`. The naming convention tells you where they attach:
 
-- `NewTable(WithTargetWidth(80), WithTableStyle("…"), WithTablePadding(…), WithBorder(…), WithSpanOverwrite(false) /* strict mode */, WithEmojiWidth(…), WithTableID("…"))`
+- `NewTable(WithTargetWidth(80) | WithTargetWidthPercent(75), WithTableStyle("…"), WithTablePadding(…), WithBorder(…), WithSpanOverwrite(false) /* strict mode */, WithEmojiWidth(…), WithTableID("…"))`
 - `AddHeader` / `AddRow` / `AddFooter` accept `WithRowID`, `WithRowStyle`, `WithCell(*Cell)`
 - `AddCell` / `AttachCell` / `NewCell` accept `WithCellID`, `WithContent`, `WithReader`, `WithColSpan`, `WithRowSpan`, `WithAlign`, `WithVAlign`, `WithWrap` / `WithSingleLine` / `WithMultiLine`, `WithTrim`, `WithMaxLines`, `WithTrimPosition`, `WithPadding` *(table-level only — see below)*, `WithCellStyle`, `WithTextColor`, `WithBackgroundColor`, `WithBold`, `WithItalic`, `WithUnderline`, `WithStrikethrough`
 
@@ -255,6 +255,47 @@ Two entry points:
 - `tbl.WriteTo(w io.Writer) (int64, error)` — writes directly to
   any `io.Writer` and returns the layout error synchronously.
   Prefer this when you're integrating with a logger or pipe.
+
+### Target width resolution
+
+`tbl.ResolvedTargetWidth()` picks the layout budget from:
+
+1. an explicit `WithTargetWidth(n)`;
+2. else `WithTargetWidthPercent(p)` — `p`% of the attached terminal,
+   falling back to `COLUMNS`, then `80`, as the base when no TTY is
+   detected;
+3. else the `COLUMNS` environment variable, if it parses to a
+   positive int;
+4. else the `80`-column default.
+
+`WithTargetWidth` and `WithTargetWidthPercent` are mutually
+exclusive — whichever is set last on the table wins. CSS accepts
+the same pair through a single `width` declaration:
+
+```go
+termtable.WithTableStyle("width: 80%")   // percent form
+termtable.WithTableStyle("width: 120")   // absolute form
+```
+
+The last `width` declaration parsed wins, even across forms (e.g.
+`"width: 30; width: 50%"` ends up as 50%).
+
+The chosen value is then **clamped to the attached terminal** when
+one is detected (stdout or stderr, via `golang.org/x/term`), so
+output never exceeds the physical screen. Pipes and other
+non-interactive sinks leave the value uncapped.
+
+| Setup                                           | Result        |
+|:------------------------------------------------|:--------------|
+| No options, 120-col terminal                    | `80`          |
+| No options, 40-col terminal                     | `40` (capped) |
+| `WithTargetWidth(200)`, 80-col terminal         | `80` (capped) |
+| `WithTargetWidth(40)`, 120-col terminal         | `40`          |
+| `WithTargetWidth(500)`, writing to a pipe       | `500`         |
+| `WithTargetWidthPercent(50)`, 100-col terminal  | `50`          |
+| `WithTargetWidthPercent(150)`, 80-col terminal  | `80` (capped) |
+| `WithTargetWidthPercent(50)`, pipe, COLUMNS=120 | `60`          |
+| No options, piped output, no `COLUMNS`          | `80`          |
 
 Both call the same three-pass pipeline:
 

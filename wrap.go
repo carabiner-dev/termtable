@@ -192,6 +192,33 @@ func lineDisplayWidth(runs []GraphemeRun) int {
 	return w
 }
 
+// clipToTerminalWidth clips every overwide line in s to maxWidth,
+// replacing the dropped tail with an ellipsis so the truncation is
+// visible. Lines that already fit are returned verbatim; ANSI escape
+// state is preserved for the kept prefix and closed with a reset.
+// Widths are measured under mode so the result matches the table's
+// emoji-width policy. Non-positive maxWidth is a no-op.
+func clipToTerminalWidth(s string, maxWidth int, mode EmojiWidthMode) string {
+	if maxWidth <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	changed := false
+	for i, ln := range lines {
+		if displayWidthFor(ln, mode) <= maxWidth {
+			continue
+		}
+		runs := graphemeRunsOf(ln, mode)
+		kept := clipEnd(runs, maxWidth, true)
+		lines[i] = renderOutputLine(outputLine{runs: kept})
+		changed = true
+	}
+	if !changed {
+		return s
+	}
+	return strings.Join(lines, "\n")
+}
+
 // ellipsizeLine decorates the final kept line of a line-clamped
 // cell. Two cases:
 //
