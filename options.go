@@ -178,6 +178,19 @@ func WithAlign(a Alignment) CellOption {
 	}
 }
 
+// WithVAlign sets the cell's vertical alignment within its row
+// (which may be taller than the cell's own wrapped content when a
+// neighbour wrapped to more lines). Default is VAlignTop. Like
+// WithAlign, the value cascades via Style — cells without an
+// explicit vertical alignment inherit row, column, and table
+// defaults in that order.
+func WithVAlign(v VerticalAlignment) CellOption {
+	return func(c *Cell) {
+		ensureStyle(c).valign = v
+		c.style.set |= sVAlign
+	}
+}
+
 // WithWrap toggles automatic word-wrapping on whitespace. Default is
 // true.
 func WithWrap(enable bool) CellOption {

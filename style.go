@@ -26,6 +26,7 @@ type Style struct {
 	borderAttrs []color.Attribute
 
 	align     Alignment
+	valign    VerticalAlignment
 	bold      bool
 	italic    bool
 	underline bool
@@ -47,6 +48,7 @@ const (
 	sUnderline
 	sStrike
 	sAlign
+	sVAlign
 )
 
 // isEmpty reports whether s contributes nothing to output.
@@ -91,6 +93,10 @@ func (s *Style) merge(src *Style) {
 	if src.set&sAlign != 0 {
 		s.align = src.align
 		s.set |= sAlign
+	}
+	if src.set&sVAlign != 0 {
+		s.valign = src.valign
+		s.set |= sVAlign
 	}
 }
 
@@ -229,6 +235,18 @@ func applyDecl(s *Style, prop, val string) {
 		case "right":
 			s.align = AlignRight
 			s.set |= sAlign
+		}
+	case "vertical-align":
+		switch strings.ToLower(val) {
+		case "top":
+			s.valign = VAlignTop
+			s.set |= sVAlign
+		case "middle":
+			s.valign = VAlignMiddle
+			s.set |= sVAlign
+		case "bottom":
+			s.valign = VAlignBottom
+			s.set |= sVAlign
 		}
 	}
 }

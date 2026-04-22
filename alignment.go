@@ -30,3 +30,34 @@ func (a Alignment) String() string {
 		return "unknown"
 	}
 }
+
+// VerticalAlignment controls where a cell's wrapped content sits
+// within a row (or rowspan block) that is taller than the content
+// itself — a common situation when one cell wraps to multiple lines
+// and its neighbours have only one.
+type VerticalAlignment uint8
+
+const (
+	// VAlignTop is the default: content hugs the top of the cell,
+	// any extra vertical space sits below.
+	VAlignTop VerticalAlignment = iota
+	// VAlignMiddle distributes extra space evenly above and below
+	// the content; any odd remainder goes to the bottom.
+	VAlignMiddle
+	// VAlignBottom pushes content to the bottom; any extra vertical
+	// space sits above.
+	VAlignBottom
+)
+
+func (v VerticalAlignment) String() string {
+	switch v {
+	case VAlignTop:
+		return "top"
+	case VAlignMiddle:
+		return "middle"
+	case VAlignBottom:
+		return "bottom"
+	default:
+		return "unknown"
+	}
+}

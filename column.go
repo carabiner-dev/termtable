@@ -166,6 +166,19 @@ func (c *Column) SetAlign(a Alignment) *Column {
 	return c
 }
 
+// SetVAlign sets the default vertical alignment for cells in this
+// column. Cells with their own WithVAlign override this; otherwise
+// the column's value participates in the table → column → row →
+// cell cascade.
+func (c *Column) SetVAlign(v VerticalAlignment) *Column {
+	if c.style == nil {
+		c.style = &Style{}
+	}
+	c.style.valign = v
+	c.style.set |= sVAlign
+	return c
+}
+
 // Width returns the pinned width set via SetWidth, or 0 if unset.
 func (c *Column) Width() int {
 	if c.set&cWidth != 0 {

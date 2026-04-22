@@ -201,20 +201,66 @@ func (rc *renderContext) contentLine(r, s int) string {
 // writeCellSlice writes padding + aligned content + padding for cell
 // at the given local sub-line index within the cell's wrapped output.
 // Sub-lines past the wrapped content yield blank space, preserving the
-// cell's width. The effective style (table → row → cell) is applied
-// to the whole slot so background colors extend into the padding.
+// cell's width. The effective style (table → column → row → cell) is
+// applied to the whole slot so background colors extend into the
+// padding. Vertical alignment shifts which wrapped line maps to the
+// current sub-line — VAlignTop leaves idx = subLine (blanks at the
+// bottom), VAlignBottom subtracts the excess (blanks at the top),
+// VAlignMiddle splits the excess above and below.
 func (rc *renderContext) writeCellSlice(b *strings.Builder, cell *Cell, subLine int) {
+	lines := rc.layout.wrapped[cell]
+	h := len(lines)
+	vspan := rc.cellVerticalSpan(cell)
+
+	offset := 0
+	switch rc.effectiveCellVAlign(cell) {
+	case VAlignMiddle:
+		if vspan > h {
+			offset = (vspan - h) / 2
+		}
+	case VAlignBottom:
+		if vspan > h {
+			offset = vspan - h
+		}
+	case VAlignTop:
+		// no offset
+	}
+	idx := subLine - offset
+
 	var slot strings.Builder
 	slot.WriteString(strings.Repeat(" ", rc.padL))
 	var line string
-	if lines := rc.layout.wrapped[cell]; subLine >= 0 && subLine < len(lines) {
-		line = lines[subLine]
+	if idx >= 0 && idx < h {
+		line = lines[idx]
 	}
 	slot.WriteString(alignText(line, rc.cellContentWidth(cell), rc.effectiveCellAlign(cell)))
 	slot.WriteString(strings.Repeat(" ", rc.padR))
 
 	style := rc.effectiveCellStyle(cell)
 	b.WriteString(style.applyContent(slot.String()))
+}
+
+// cellVerticalSpan returns the number of output lines the cell
+// occupies vertically — the sum of row heights across its effective
+// rowspan plus one line per internal separator.
+func (rc *renderContext) cellVerticalSpan(cell *Cell) int {
+	a := absRowOf(rc.t, cell)
+	rs := effectiveRowSpan(rc.t, cell)
+	var sum int
+	for i := a; i < a+rs; i++ {
+		sum += rc.layout.rowHeights[i]
+	}
+	return sum + rs - 1
+}
+
+// effectiveCellVAlign resolves a cell's vertical alignment through
+// the same cascade as its colour style. Defaults to VAlignTop.
+func (rc *renderContext) effectiveCellVAlign(cell *Cell) VerticalAlignment {
+	style := rc.effectiveCellStyle(cell)
+	if style.set&sVAlign != 0 {
+		return style.valign
+	}
+	return VAlignTop
 }
 
 // effectiveCellAlign resolves a cell's horizontal alignment. The
