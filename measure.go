@@ -56,7 +56,18 @@ func Measure(t *Table) *measureResult {
 		if err != nil {
 			out.readerErrs = append(out.readerErrs, readerErr{cellID: c.id, err: err})
 		}
-		minW := minUnbreakableWidthFor(content, mode)
+		wrap, _, _, _ := effectiveWrapParams(t, c)
+		var minW int
+		if wrap {
+			// Multi-line cells need at least the widest unbreakable
+			// run so wrapping never has to hard-break a single word.
+			minW = minUnbreakableWidthFor(content, mode)
+		} else if content != "" {
+			// Single-line cells trim to whatever width the column
+			// gets. One column is enough to render the ellipsis or
+			// a clipped prefix.
+			minW = 1
+		}
 		desW := maxLineWidthFor(content, mode)
 		if c.colSpan == 1 {
 			if minW > out.colMin[c.gridCol] {

@@ -87,6 +87,7 @@ t.Column(2).SetAlign(termtable.AlignRight).Style("color: yellow")
 | `white-space`       | `normal` \| `nowrap` (also `pre` / `pre-line`) | Multi-line wrap vs single-line (see [wrapping.md](wrapping.md)). |
 | `text-overflow`     | `ellipsis` \| `clip`                          | Truncation marker; default is `ellipsis`.                   |
 | `line-clamp`        | non-negative integer, `none`, `auto`          | Cap wrapped height at N lines; `none`/`0` means unbounded. `-webkit-line-clamp` accepted. |
+| `text-overflow-position` | `start` \| `middle` \| `end`             | **termtable extension.** Where the ellipsis sits when content is clipped. See [wrapping.md](wrapping.md). |
 
 Column CSS additionally accepts the sizing properties documented in
 [columns.md](columns.md). Everything else the parser doesn't

@@ -13,7 +13,7 @@ import (
 // with the common Phase 2 defaults (wrap=true, trim=false, no height
 // cap).
 func wrapOf(s string, width int) []string {
-	return Wrap(NaturalLines(s), width, true, false, 0)
+	return Wrap(NaturalLines(s), width, true, false, 0, TrimEnd)
 }
 
 func TestWrapNoBreakNeeded(t *testing.T) {
@@ -138,14 +138,14 @@ func TestWrapNoANSINoReset(t *testing.T) {
 }
 
 func TestWrapNoWrapSingleLine(t *testing.T) {
-	out := Wrap(NaturalLines("hello world"), 20, false, false, 0)
+	out := Wrap(NaturalLines("hello world"), 20, false, false, 0, TrimEnd)
 	if !reflect.DeepEqual(out, []string{"hello world"}) {
 		t.Errorf("got %q", out)
 	}
 }
 
 func TestWrapNoWrapTrimEllipsizes(t *testing.T) {
-	out := Wrap(NaturalLines("hello world"), 8, false, true, 0)
+	out := Wrap(NaturalLines("hello world"), 8, false, true, 0, TrimEnd)
 	if len(out) != 1 {
 		t.Fatalf("lines = %d", len(out))
 	}
@@ -158,7 +158,7 @@ func TestWrapNoWrapTrimEllipsizes(t *testing.T) {
 }
 
 func TestWrapMaxHeightTruncates(t *testing.T) {
-	out := Wrap(NaturalLines("a\nb\nc\nd"), 5, true, true, 2)
+	out := Wrap(NaturalLines("a\nb\nc\nd"), 5, true, true, 2, TrimEnd)
 	if len(out) != 2 {
 		t.Fatalf("lines = %d, want 2: %q", len(out), out)
 	}
@@ -168,7 +168,7 @@ func TestWrapMaxHeightTruncates(t *testing.T) {
 }
 
 func TestWrapMaxHeightNoTrimKeepsContent(t *testing.T) {
-	out := Wrap(NaturalLines("a\nb\nc"), 5, true, false, 2)
+	out := Wrap(NaturalLines("a\nb\nc"), 5, true, false, 2, TrimEnd)
 	if len(out) != 2 {
 		t.Fatalf("lines = %d", len(out))
 	}

@@ -38,18 +38,18 @@ type span struct{ start, end int }
 // maxHeight > 0 caps the total number of output lines. Exceeding
 // content is dropped; when trim is also true the last kept line is
 // truncated to end in "…". maxHeight == 0 disables the cap.
-func Wrap(lines [][]GraphemeRun, width int, wrap, trim bool, maxHeight int) []string {
+func Wrap(lines [][]GraphemeRun, width int, wrap, trim bool, maxHeight int, trimPos TrimPosition) []string {
 	if width <= 0 {
 		return nil
 	}
 	var olines []outputLine
 	for _, runs := range lines {
-		olines = append(olines, wrapNaturalLine(runs, width, wrap, trim)...)
+		olines = append(olines, wrapNaturalLine(runs, width, wrap, trim, trimPos)...)
 	}
 	if maxHeight > 0 && len(olines) > maxHeight {
 		kept := olines[:maxHeight]
 		if trim {
-			kept[maxHeight-1] = ellipsizeLine(kept[maxHeight-1], width)
+			kept[maxHeight-1] = ellipsizeLine(kept[maxHeight-1], width, trimPos)
 		}
 		olines = kept
 	}
@@ -63,28 +63,18 @@ func Wrap(lines [][]GraphemeRun, width int, wrap, trim bool, maxHeight int) []st
 // wrapNaturalLine wraps a single natural-line's runs into output lines.
 // A natural line with zero runs produces one empty output line so the
 // hard break is preserved in the output.
-func wrapNaturalLine(runs []GraphemeRun, width int, wrap, trim bool) []outputLine {
+func wrapNaturalLine(runs []GraphemeRun, width int, wrap, trim bool, trimPos TrimPosition) []outputLine {
 	if len(runs) == 0 {
 		return []outputLine{{}}
 	}
 	cum := cumulativeEsc(runs)
 	if !wrap {
-		sp := span{0, len(runs)}
-		total := lineDisplayWidth(runs)
-		if total <= width {
-			return []outputLine{{runs: runs[sp.start:sp.end], startEsc: cum[sp.start]}}
+		if lineDisplayWidth(runs) <= width {
+			return []outputLine{{runs: runs, startEsc: cum[0]}}
 		}
-		// Content overflows its slot. When trim is enabled, reserve
-		// one column for the ellipsis; otherwise hard-clip to the
-		// full available width (CSS text-overflow: clip semantic).
-		if trim {
-			sp = clipSpanToWidth(runs, sp, width-1)
-			clipped := append([]GraphemeRun{}, runs[sp.start:sp.end]...)
-			clipped = append(clipped, GraphemeRun{Text: ellipsis, Width: 1})
-			return []outputLine{{runs: clipped, startEsc: cum[sp.start]}}
-		}
-		sp = clipSpanToWidth(runs, sp, width)
-		return []outputLine{{runs: runs[sp.start:sp.end], startEsc: cum[sp.start]}}
+		// Content overflows its slot. Clip according to the trim
+		// position, adding an ellipsis marker when trim is enabled.
+		return []outputLine{clipOverflowingLine(runs, cum, width, trim, trimPos)}
 	}
 	widths := make([]int, len(runs))
 	isWS := make([]bool, len(runs))
@@ -202,28 +192,16 @@ func lineDisplayWidth(runs []GraphemeRun) int {
 	return w
 }
 
-// clipSpanToWidth truncates sp to at most targetWidth display columns.
-// Clusters are kept whole; if adding the next cluster would exceed the
-// target, it is dropped.
-func clipSpanToWidth(runs []GraphemeRun, sp span, targetWidth int) span {
-	if targetWidth <= 0 {
-		return span{sp.start, sp.start}
-	}
-	w := 0
-	for i := sp.start; i < sp.end; i++ {
-		if w+runs[i].Width > targetWidth {
-			return span{sp.start, i}
-		}
-		w += runs[i].Width
-	}
-	return sp
-}
-
-// ellipsizeLine produces a copy of ol truncated (from the right) so
-// its rendered width is at most width columns, with "…" as the final
-// cluster. When the line already fits with room to spare, "…" is
-// simply appended.
-func ellipsizeLine(ol outputLine, width int) outputLine {
+// ellipsizeLine decorates the final kept line of a line-clamped
+// cell. Two cases:
+//
+//  1. The line fits in the column with room to spare — append a
+//     trailing "…" to signal that content below was dropped. This
+//     marker always sits at the end because it indicates vertical
+//     truncation, not horizontal.
+//  2. The line itself overflows the column — clip horizontally per
+//     trimPos so the user's chosen trim position still wins.
+func ellipsizeLine(ol outputLine, width int, trimPos TrimPosition) outputLine {
 	if width <= 0 {
 		return outputLine{startEsc: ol.startEsc}
 	}
@@ -234,9 +212,128 @@ func ellipsizeLine(ol outputLine, width int) outputLine {
 		newRuns = append(newRuns, GraphemeRun{Text: ellipsis, Width: 1})
 		return outputLine{runs: newRuns, startEsc: ol.startEsc}
 	}
-	sp := clipSpanToWidth(ol.runs, span{0, len(ol.runs)}, width-1)
-	newRuns := make([]GraphemeRun, 0, sp.end-sp.start+1)
-	newRuns = append(newRuns, ol.runs[sp.start:sp.end]...)
-	newRuns = append(newRuns, GraphemeRun{Text: ellipsis, Width: 1})
-	return outputLine{runs: newRuns, startEsc: ol.startEsc}
+	clipped := clipRuns(ol.runs, width, true, trimPos)
+	return outputLine{runs: clipped, startEsc: ol.startEsc}
+}
+
+// clipOverflowingLine builds a single outputLine from runs clipped
+// to width, honouring the trim policy and marker position. Called
+// by wrapNaturalLine's single-line branch.
+func clipOverflowingLine(runs []GraphemeRun, cum []string, width int, trim bool, trimPos TrimPosition) outputLine {
+	clipped := clipRuns(runs, width, trim, trimPos)
+	// The ANSI state that was active just before the first visible
+	// run of the clipped output needs to be reconstructed. For
+	// TrimEnd we keep the head, so cum[0] is correct. For TrimStart
+	// we drop a prefix, so the state at the kept first index is the
+	// right answer. TrimMiddle keeps head + tail; the head's state
+	// (cum[0]) prevails.
+	return outputLine{runs: clipped, startEsc: cum[0]}
+}
+
+// clipRuns returns runs truncated to fit width columns with an
+// ellipsis (when trim=true) placed according to pos, or a hard clip
+// (when trim=false) at the same position.
+func clipRuns(runs []GraphemeRun, width int, trim bool, pos TrimPosition) []GraphemeRun {
+	switch pos {
+	case TrimStart:
+		return clipStart(runs, width, trim)
+	case TrimMiddle:
+		return clipMiddle(runs, width, trim)
+	case TrimEnd:
+		return clipEnd(runs, width, trim)
+	}
+	return clipEnd(runs, width, trim)
+}
+
+// clipEnd keeps the prefix of runs that fits, optionally appending
+// an ellipsis when trim is true.
+func clipEnd(runs []GraphemeRun, width int, trim bool) []GraphemeRun {
+	if !trim {
+		return clipHeadToWidth(runs, width)
+	}
+	kept := clipHeadToWidth(runs, width-1)
+	out := make([]GraphemeRun, len(kept), len(kept)+1)
+	copy(out, kept)
+	out = append(out, GraphemeRun{Text: ellipsis, Width: 1})
+	return out
+}
+
+// clipStart keeps the suffix of runs that fits, optionally
+// prepending an ellipsis when trim is true.
+func clipStart(runs []GraphemeRun, width int, trim bool) []GraphemeRun {
+	if !trim {
+		return clipTailToWidth(runs, width)
+	}
+	kept := clipTailToWidth(runs, width-1)
+	out := make([]GraphemeRun, 0, len(kept)+1)
+	out = append(out, GraphemeRun{Text: ellipsis, Width: 1})
+	out = append(out, kept...)
+	return out
+}
+
+// clipMiddle keeps both ends of runs with an ellipsis (or hard cut)
+// between them. With trim=true the total budget becomes
+// leftWidth + 1 + rightWidth = width, leftWidth being floor((w-1)/2).
+// With trim=false the budget splits evenly: floor(w/2) + ceil(w/2).
+func clipMiddle(runs []GraphemeRun, width int, trim bool) []GraphemeRun {
+	var leftWidth, rightWidth int
+	if trim {
+		leftWidth = (width - 1) / 2
+		rightWidth = width - 1 - leftWidth
+	} else {
+		leftWidth = width / 2
+		rightWidth = width - leftWidth
+	}
+	left := clipHeadToWidth(runs, leftWidth)
+	right := clipTailToWidth(runs, rightWidth)
+	// If the head and tail overlap in the source slice (possible
+	// with very short content that still exceeds width due to wide
+	// clusters), drop the overlap from the tail to preserve order
+	// and avoid duplicate runs.
+	if overlap := len(left) + len(right) - len(runs); overlap > 0 {
+		if overlap >= len(right) {
+			right = nil
+		} else {
+			right = right[overlap:]
+		}
+	}
+	out := make([]GraphemeRun, 0, len(left)+len(right)+1)
+	out = append(out, left...)
+	if trim {
+		out = append(out, GraphemeRun{Text: ellipsis, Width: 1})
+	}
+	out = append(out, right...)
+	return out
+}
+
+// clipHeadToWidth returns the longest prefix of runs whose
+// cumulative width does not exceed maxWidth.
+func clipHeadToWidth(runs []GraphemeRun, maxWidth int) []GraphemeRun {
+	if maxWidth <= 0 {
+		return nil
+	}
+	var w int
+	for i, r := range runs {
+		if w+r.Width > maxWidth {
+			return runs[:i]
+		}
+		w += r.Width
+	}
+	return runs
+}
+
+// clipTailToWidth returns the longest suffix of runs whose
+// cumulative width does not exceed maxWidth.
+func clipTailToWidth(runs []GraphemeRun, maxWidth int) []GraphemeRun {
+	if maxWidth <= 0 {
+		return nil
+	}
+	var w int
+	for i := len(runs) - 1; i >= 0; i-- {
+		if w+runs[i].Width > maxWidth {
+			return runs[i+1:]
+		}
+		w += runs[i].Width
+	}
+	return runs
 }

@@ -35,10 +35,11 @@ type Style struct {
 	// Layout-related fields. Cascade the same way as colour
 	// attributes so a row or column can force single-line rendering
 	// on all its cells. Defaults (when unset at every level):
-	// wrap=true, trim=true, maxLines=0 (unbounded).
-	wrap     bool
-	trim     bool
-	maxLines int
+	// wrap=true, trim=true, maxLines=0 (unbounded), trimPosition=End.
+	wrap         bool
+	trim         bool
+	maxLines     int
+	trimPosition TrimPosition
 
 	set styleField
 }
@@ -50,6 +51,10 @@ const (
 	cssNormal = "normal"
 	cssAuto   = "auto"
 	cssNone   = "none"
+	cssLeft   = "left"
+	cssCenter = "center"
+	cssRight  = "right"
+	cssMiddle = "middle"
 )
 
 // styleField is a bitmask indicating which Style fields have been set
@@ -69,6 +74,7 @@ const (
 	sWrap
 	sTrim
 	sMaxLines
+	sTrimPos
 )
 
 // isEmpty reports whether s contributes nothing to output.
@@ -129,6 +135,10 @@ func (s *Style) merge(src *Style) {
 	if src.set&sMaxLines != 0 {
 		s.maxLines = src.maxLines
 		s.set |= sMaxLines
+	}
+	if src.set&sTrimPos != 0 {
+		s.trimPosition = src.trimPosition
+		s.set |= sTrimPos
 	}
 }
 
@@ -220,22 +230,46 @@ func parseCSS(css string, s *Style) {
 }
 
 func applyDecl(s *Style, prop, val string) {
+	if applyColorDecl(s, prop, val) {
+		return
+	}
+	if applyTextDecl(s, prop, val) {
+		return
+	}
+	applyLayoutDecl(s, prop, val)
+}
+
+// applyColorDecl handles the colour-valued properties. Returns true
+// when the property was recognized (so the caller stops looking).
+func applyColorDecl(s *Style, prop, val string) bool {
 	switch prop {
 	case "color":
 		if attrs, ok := parseFgColor(val); ok {
 			s.fgAttrs = attrs
 			s.set |= sFg
 		}
+		return true
 	case "background", "background-color":
 		if attrs, ok := parseBgColor(val); ok {
 			s.bgAttrs = attrs
 			s.set |= sBg
 		}
+		return true
 	case "border-color":
 		if attrs, ok := parseFgColor(val); ok {
 			s.borderAttrs = attrs
 			s.set |= sBorder
 		}
+		return true
+	}
+	return false
+}
+
+// applyTextDecl handles the text-attribute properties (font-weight,
+// font-style, text-decoration, text-align, vertical-align). Returns
+// true when the property was recognized.
+func applyTextDecl(s *Style, prop, val string) bool {
+	switch prop {
 	case "font-weight":
 		switch strings.ToLower(val) {
 		case "bold":
@@ -245,6 +279,7 @@ func applyDecl(s *Style, prop, val string) {
 			s.bold = false
 			s.set |= sBold
 		}
+		return true
 	case "font-style":
 		switch strings.ToLower(val) {
 		case "italic":
@@ -254,32 +289,43 @@ func applyDecl(s *Style, prop, val string) {
 			s.italic = false
 			s.set |= sItalic
 		}
+		return true
 	case "text-decoration":
 		applyTextDecoration(s, val)
+		return true
 	case "text-align":
 		switch strings.ToLower(val) {
-		case "left":
+		case cssLeft:
 			s.align = AlignLeft
 			s.set |= sAlign
-		case "center":
+		case cssCenter:
 			s.align = AlignCenter
 			s.set |= sAlign
-		case "right":
+		case cssRight:
 			s.align = AlignRight
 			s.set |= sAlign
 		}
+		return true
 	case "vertical-align":
 		switch strings.ToLower(val) {
 		case "top":
 			s.valign = VAlignTop
 			s.set |= sVAlign
-		case "middle":
+		case cssMiddle:
 			s.valign = VAlignMiddle
 			s.set |= sVAlign
 		case "bottom":
 			s.valign = VAlignBottom
 			s.set |= sVAlign
 		}
+		return true
+	}
+	return false
+}
+
+// applyLayoutDecl handles the wrap / trim / line-clamp family.
+func applyLayoutDecl(s *Style, prop, val string) {
+	switch prop {
 	case "white-space":
 		switch strings.ToLower(val) {
 		case cssNormal, "pre-line":
@@ -298,17 +344,33 @@ func applyDecl(s *Style, prop, val string) {
 			s.trim = false
 			s.set |= sTrim
 		}
+	case "text-overflow-position", "text-overflow-side":
+		switch strings.ToLower(val) {
+		case "start", cssLeft, "head":
+			s.trimPosition = TrimStart
+			s.set |= sTrimPos
+		case cssMiddle, cssCenter:
+			s.trimPosition = TrimMiddle
+			s.set |= sTrimPos
+		case "end", cssRight, "tail":
+			s.trimPosition = TrimEnd
+			s.set |= sTrimPos
+		}
 	case "line-clamp", "-webkit-line-clamp":
-		v := strings.ToLower(val)
-		if v == cssNone || v == cssAuto {
-			s.maxLines = 0
-			s.set |= sMaxLines
-			return
-		}
-		if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && n >= 0 {
-			s.maxLines = n
-			s.set |= sMaxLines
-		}
+		applyLineClamp(s, val)
+	}
+}
+
+func applyLineClamp(s *Style, val string) {
+	v := strings.ToLower(val)
+	if v == cssNone || v == cssAuto {
+		s.maxLines = 0
+		s.set |= sMaxLines
+		return
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && n >= 0 {
+		s.maxLines = n
+		s.set |= sMaxLines
 	}
 }
 

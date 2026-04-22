@@ -248,6 +248,24 @@ func WithMaxLines(n int) CellOption {
 	}
 }
 
+// WithTrimPosition controls where the ellipsis (or clip) lands when
+// a cell's content must be truncated to fit. Default is TrimEnd —
+// the content's prefix is kept and the marker sits at the right
+// edge. TrimStart keeps the suffix (marker on the left), TrimMiddle
+// keeps both ends. Equivalent to termtable's CSS extension
+// text-overflow-position: end | start | middle.
+//
+// This only affects horizontal single-line truncation (wrap=false,
+// or the last line of a line-clamped multi-line cell when it
+// doesn't fit its column width). Vertical dropping under
+// line-clamp always happens from the end.
+func WithTrimPosition(pos TrimPosition) CellOption {
+	return func(c *Cell) {
+		ensureStyle(c).trimPosition = pos
+		c.style.set |= sTrimPos
+	}
+}
+
 // WithCellStyle sets style properties on the cell, cascaded over the
 // row's and table's style. See WithTableStyle for the CSS grammar.
 // Convenience options WithTextColor, WithBackgroundColor, WithBold,

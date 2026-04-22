@@ -66,3 +66,34 @@ func (v VerticalAlignment) String() string {
 		return unknownName
 	}
 }
+
+// TrimPosition controls where an ellipsis (or clip) lands when a
+// cell's content needs to be truncated horizontally. It is only
+// consulted when content is actually being truncated — cells that
+// fit leave their content unchanged regardless of this setting.
+type TrimPosition uint8
+
+const (
+	// TrimEnd (the default) keeps the content's prefix and places
+	// the truncation marker at the right — e.g. "www.exampl…".
+	TrimEnd TrimPosition = iota
+	// TrimStart keeps the content's suffix and places the marker
+	// at the left — e.g. "…/page.html".
+	TrimStart
+	// TrimMiddle keeps both ends and places the marker between —
+	// e.g. "www.exam…/page.html".
+	TrimMiddle
+)
+
+func (p TrimPosition) String() string {
+	switch p {
+	case TrimEnd:
+		return "end"
+	case TrimStart:
+		return "start"
+	case TrimMiddle:
+		return "middle"
+	default:
+		return unknownName
+	}
+}

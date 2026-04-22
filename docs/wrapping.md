@@ -22,10 +22,16 @@ have it ripple down.
 | `text-overflow: ellipsis`  | `WithTrim(true)`                         | ✓       | Append `…` when content is truncated.                        |
 | `text-overflow: clip`      | `WithTrim(false)`                        |         | Hard-cut at the column edge.                                 |
 | `line-clamp: N`            | `WithMaxLines(N)`                        | 0       | Cap at N lines; unbounded by default. `none` resets.         |
+| `text-overflow-position: start\|middle\|end` | `WithTrimPosition(TrimStart\|TrimMiddle\|TrimEnd)` | `end` | Where the ellipsis lands when content is clipped horizontally. |
 
 `-webkit-line-clamp` is accepted as an alias for `line-clamp`. The
 aliases `pre-line` (for `normal`) and `pre` (for `nowrap`) are
 recognized by `white-space`.
+
+`text-overflow-position` is a termtable extension — no standard
+CSS property exists for it. The alias `text-overflow-side` is
+accepted too, and the value synonyms `left`/`head` for `start`,
+`center` for `middle`, and `right`/`tail` for `end`.
 
 ## Samples
 
@@ -101,6 +107,56 @@ r.AddCell(termtable.WithContent(desc),
 │                │ that would…         │
 └────────────────┴─────────────────────┘
 ```
+
+### Trim position for URL-like content
+
+When a single unbreakable token (URL, identifier, path) needs to be
+truncated, controlling *which end* gets cut often matters more than
+the truncation itself.
+
+```go
+t := termtable.NewTable(termtable.WithTargetWidth(30))
+t.Column(0).Style("white-space: nowrap")
+// three rows, each a URL that doesn't fit the column
+```
+
+With `text-overflow-position: end` (default) — keep the prefix,
+useful when the suffix is the distinguishing part *only if you
+can see it all*, which you can't here:
+
+```
+┌────────────────────────────┐
+│ https://www.example.com/p… │
+│ https://www.example.com/p… │
+│ https://api.example.com/v… │
+└────────────────────────────┘
+```
+
+With `text-overflow-position: start` — keep the suffix; useful
+when every URL shares the same host and the path is what
+distinguishes them:
+
+```
+┌────────────────────────────┐
+│ …ww.example.com/page1.html │
+│ …ww.example.com/page2.html │
+│ …i.example.com/v1/items/42 │
+└────────────────────────────┘
+```
+
+With `text-overflow-position: middle` — keep both ends so the
+user can read the host AND the file/ID:
+
+```
+┌────────────────────────────┐
+│ https://www.…om/page1.html │
+│ https://www.…om/page2.html │
+│ https://api.…m/v1/items/42 │
+└────────────────────────────┘
+```
+
+The option cascades through the Style hierarchy like everything
+else — set it on a column so every URL cell inherits.
 
 ### Column cascade
 
