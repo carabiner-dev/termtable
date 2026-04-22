@@ -44,12 +44,26 @@ The upshot:
 | Method                | CSS equivalent          | Effect                                               |
 |:----------------------|:------------------------|:-----------------------------------------------------|
 | `SetWidth(n)`         | `width: n`              | Pin content width to exactly `n`.                    |
+| `SetWidthPercent(p)`  | `width: p%`             | Pin content width to `p`% of the table target.       |
 | `SetMin(n)`           | `min-width: n`          | Floor — combined with content minimum via `max`.     |
+| `SetMinPercent(p)`    | `min-width: p%`         | Floor expressed as `p`% of the table target.         |
 | `SetMax(n)`           | `max-width: n`          | Cap — content wraps when it would exceed.            |
+| `SetMaxPercent(p)`    | `max-width: p%`         | Cap expressed as `p`% of the table target.           |
 | `SetWeight(w)`        | `flex: w`               | Share of leftover budget.                            |
 | `SetAlign(a)`         | `text-align: left\|center\|right` | Default horizontal alignment for cells in the column. |
 | `SetVAlign(v)`        | `vertical-align: top\|middle\|bottom` | Default vertical alignment for cells in the column.   |
 | `SetID(id)`           | —                       | Register the column with `Table.GetElementByID`.     |
+
+Absolute and percent forms of the same property (e.g. `SetMax` and
+`SetMaxPercent`) are mutually exclusive — whichever is set last
+wins. CSS `width: N` / `min-width: N` / `max-width: N` similarly
+accept either form.
+
+Percent forms resolve against the table's target width at layout
+time, so a declaration like `max-width: 20%` always means 20 % of
+however wide the table ends up. When combined with
+`white-space: nowrap` on the same column, long content is clipped
+with an ellipsis instead of forcing the column wider than the cap.
 
 CSS also forwards the style-only properties (`color`, `background`,
 `font-weight`, `font-style`, `text-decoration`) into a column-level

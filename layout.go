@@ -104,7 +104,7 @@ func Layout(t *Table, m *measureResult) *layoutResult {
 		available = 0
 	}
 
-	effMin, effMax, weights := effectiveBounds(t, m, nCols)
+	effMin, effMax, weights := effectiveBounds(t, m, nCols, target)
 
 	var minSum int
 	for _, v := range effMin {
@@ -226,8 +226,10 @@ func effectiveRowSpan(t *Table, c *Cell) int {
 // effectiveBounds combines content measurements with the per-column
 // user configuration into the three parallel slices the solver needs:
 // effMin[i] is the lower bound, effMax[i] the upper bound, and
-// weights[i] the distribution weight (defaulting to 1.0).
-func effectiveBounds(t *Table, m *measureResult, nCols int) (effMin, effMax []int, weights []float64) {
+// weights[i] the distribution weight (defaulting to 1.0). Percent-
+// valued column width/min/max (e.g. min-width: 20%) are resolved
+// against target here.
+func effectiveBounds(t *Table, m *measureResult, nCols, target int) (effMin, effMax []int, weights []float64) {
 	effMin = make([]int, nCols)
 	effMax = make([]int, nCols)
 	weights = make([]float64, nCols)
@@ -235,15 +237,18 @@ func effectiveBounds(t *Table, m *measureResult, nCols int) (effMin, effMax []in
 		col := t.Column(i)
 		contentMin := m.colMin[i]
 
+		userMin, hasUserMin := columnMinWidth(col, target)
 		minV := contentMin
-		if col.set&cMin != 0 && col.minW > minV {
-			minV = col.minW
+		if hasUserMin && userMin > minV {
+			minV = userMin
 		}
 
 		var maxV int
+		userWidth, hasUserWidth := columnPinWidth(col, target)
+		userMax, hasUserMax := columnMaxWidth(col, target)
 		switch {
-		case col.set&cWidth != 0:
-			pin := col.width
+		case hasUserWidth:
+			pin := userWidth
 			if pin < minV {
 				// Content minimum wins; the pinned width would force
 				// truncation, which we prefer to avoid. The column
@@ -253,8 +258,8 @@ func effectiveBounds(t *Table, m *measureResult, nCols int) (effMin, effMax []in
 				minV = pin
 				maxV = pin
 			}
-		case col.set&cMax != 0:
-			maxV = col.maxW
+		case hasUserMax:
+			maxV = userMax
 			if maxV < minV {
 				maxV = minV
 			}
@@ -272,6 +277,51 @@ func effectiveBounds(t *Table, m *measureResult, nCols int) (effMin, effMax []in
 		}
 	}
 	return effMin, effMax, weights
+}
+
+// columnPinWidth resolves the column's pinned width (SetWidth /
+// width: N | N%) into an absolute column count using target as the
+// 100 % base. Reports ok=false if no pin is set.
+func columnPinWidth(c *Column, target int) (int, bool) {
+	switch {
+	case c.set&cWidth != 0:
+		return c.width, true
+	case c.set&cWidthPct != 0:
+		return percentToCols(target, c.widthPercent), true
+	}
+	return 0, false
+}
+
+// columnMinWidth resolves the column's user-supplied min-width floor.
+func columnMinWidth(c *Column, target int) (int, bool) {
+	switch {
+	case c.set&cMin != 0:
+		return c.minW, true
+	case c.set&cMinPct != 0:
+		return percentToCols(target, c.minPercent), true
+	}
+	return 0, false
+}
+
+// columnMaxWidth resolves the column's user-supplied max-width ceiling.
+func columnMaxWidth(c *Column, target int) (int, bool) {
+	switch {
+	case c.set&cMax != 0:
+		return c.maxW, true
+	case c.set&cMaxPct != 0:
+		return percentToCols(target, c.maxPercent), true
+	}
+	return 0, false
+}
+
+// percentToCols returns p percent of base, floored at 1. Used for
+// resolving column-level percent widths to absolute content columns.
+func percentToCols(base, p int) int {
+	n := base * p / 100
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 // distributeByWeights grows assigned towards effMax until the
