@@ -1,0 +1,8 @@
+# Keep Unix line endings regardless of platform so golden fixtures
+# stay byte-identical on Windows checkouts. Without this, Git on
+# Windows rewrites text files with CRLF and the golden-table tests
+# fail against the \n that tbl.String() always produces.
+* text=auto eol=lf
+
+# Golden fixtures must be exact bytes; never filter them.
+testdata/golden/*.golden -text eol=lf

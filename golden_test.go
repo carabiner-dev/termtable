@@ -4,6 +4,7 @@
 package termtable
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,6 +29,11 @@ func assertGolden(t *testing.T, name, got string) {
 	if err != nil {
 		t.Fatalf("read golden %s: %v (did you forget to set TERMTABLE_UPDATE_GOLDEN=1?)", name, err)
 	}
+	// Normalise CRLF → LF in case the fixture was checked out on
+	// Windows without the repo's .gitattributes. tbl.String() always
+	// emits LF; comparing byte-exact after that step keeps the
+	// expectation platform-agnostic.
+	want = bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n"))
 	if got != string(want) {
 		t.Errorf("golden %s mismatch:\n--- want ---\n%s--- got ---\n%s", name, want, got)
 	}
