@@ -1,6 +1,6 @@
 module github.com/carabiner-dev/termtable
 
-go 1.25.9
+go 1.25.12
 
 require (
 	github.com/fatih/color v1.19.0
