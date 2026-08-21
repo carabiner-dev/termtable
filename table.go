@@ -452,7 +452,7 @@ func detectTerminalWidth() (int, bool) {
 		if f == nil {
 			continue
 		}
-		fd := int(f.Fd()) //nolint:gosec // fd values always fit in int
+		fd := int(f.Fd())
 		if !term.IsTerminal(fd) {
 			continue
 		}
