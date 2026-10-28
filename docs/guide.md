@@ -284,6 +284,15 @@ to the attached terminal's width (stdout or stderr, via
 `golang.org/x/term`). Pipes and other non-interactive sinks leave
 the value uncapped.
 
+**Indent** — `WithIndent(n)` / `margin-left: n` renders `n` spaces
+in front of every line and reserves them from the screen first:
+percentages, the default bounds and the cap all work on
+`terminal − n` (or `COLUMNS − n`), so an indented table that fills
+the screen still ends inside it. Every width above, including
+`ResolvedTargetWidth`, excludes the margin. Prefer this over
+indenting the rendered string yourself, which the resolver cannot
+see.
+
 | Setup                                             | Result        |
 |:--------------------------------------------------|:--------------|
 | No options, short content, 200-col terminal       | `80` (min)    |
@@ -299,6 +308,8 @@ the value uncapped.
 | `WithMaxWidth(50)`, long content                  | `50`          |
 | `WithTableStyle("width: 80%")`, 100 TTY           | `80`          |
 | `WithTableStyle("min-width: 60; max-width: 50%")` | clamped into `[60, 0.5 × screen]` |
+| `WithIndent(2) + WithMaxWidthPercent(100)`, 120-col terminal, long content | `118` (+2 margin = 120) |
+| `WithIndent(4)`, 80-col terminal                  | `76` (floor capped to `80 − 4`) |
 
 **CSS grammar**. All three bounds accept absolute or percent
 values, and the last declaration on the table wins:
