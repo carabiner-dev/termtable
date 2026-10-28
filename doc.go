@@ -36,4 +36,6 @@
 //     the floor. The resolved value is clamped to the attached
 //     terminal's width when one is detected, so output never exceeds
 //     the physical screen; writing to a pipe leaves the value uncapped.
+//     A WithIndent margin is reserved from the screen before any of
+//     this applies and is emitted in front of every rendered line.
 package termtable

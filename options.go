@@ -125,6 +125,22 @@ func WithMaxWidthPercent(p int) TableOption {
 	}
 }
 
+// WithIndent renders the table with a left margin of n spaces in front
+// of every line. The margin is part of the table's footprint: the
+// screen the width resolver may fill is the attached terminal (or
+// COLUMNS) minus n, so a table that fills the screen still ends inside
+// it once indented. Widths reported by ResolvedTargetWidth and set by
+// the width options exclude the margin. Non-positive n is ignored.
+// Equivalent to "margin-left: n" in WithTableStyle.
+func WithIndent(n int) TableOption {
+	return func(t *Table) {
+		if n <= 0 {
+			return
+		}
+		t.opts.indent = n
+	}
+}
+
 // WithBorder replaces the table's border glyph set. Defaults to
 // DefaultSingleLine.
 func WithBorder(b BorderSet) TableOption {
@@ -198,6 +214,8 @@ func WithEmojiWidth(mode EmojiWidthMode) TableOption {
 //   - width: N | N% — target layout width, equivalent to
 //     WithTargetWidth / WithTargetWidthPercent. The last width
 //     declaration on the table wins.
+//   - margin-left: N — left margin of N spaces reserved from the
+//     screen width, equivalent to WithIndent.
 //
 // Unknown properties and unrecognized values are silently ignored.
 func WithTableStyle(css string) TableOption {
@@ -236,6 +254,11 @@ func WithTableStyle(css string) TableOption {
 						t.opts.targetWidthSet = true
 						t.opts.targetWidthPercentSet = false
 					}
+				}
+				return
+			case "margin-left":
+				if n, pct, ok := parseWidthOrPercent(val); ok && !pct && n > 0 {
+					t.opts.indent = n
 				}
 				return
 			case "min-width":

@@ -81,6 +81,7 @@ type tableOptions struct {
 	padding               Padding
 	emojiWidth            EmojiWidthMode
 	spanOverwrite         bool
+	indent                int
 }
 
 func defaultTableOptions() tableOptions {
@@ -326,6 +327,9 @@ func (t *Table) InBounds(r, c int) bool {
 // Whatever value the cascade produces is clamped to the attached
 // terminal's width when one is detected (stdout or stderr, via
 // golang.org/x/term), so output never exceeds the physical screen.
+// A WithIndent margin is reserved first: the screen the table may use
+// is the terminal minus the indent, and the reported width excludes
+// the indent itself.
 //
 // ResolvedTargetWidth is called without a measurement, so its "natural"
 // baseline is the table's max-width. Layout uses the same resolver
@@ -342,7 +346,7 @@ func (t *Table) ResolvedTargetWidth() int {
 // available — the resolver falls back to the table's max-width as the
 // baseline, which matches the public ResolvedTargetWidth contract.
 func (t *Table) resolveTargetWidth(natural int) int {
-	tty, ttyOK := terminalWidthProbe()
+	tty, ttyOK := t.screenWidth()
 	minW := t.resolveMinWidth(tty, ttyOK)
 	maxW := t.resolveMaxWidth(tty, ttyOK)
 
@@ -355,14 +359,12 @@ func (t *Table) resolveTargetWidth(natural int) int {
 		target = t.opts.targetWidth
 		hasExplicit = true
 	case t.opts.targetWidthPercentSet && t.opts.targetWidthPercent > 0:
-		target = percentOfScreen(t.opts.targetWidthPercent, tty, ttyOK)
+		target = t.percentOfScreen(t.opts.targetWidthPercent, tty, ttyOK)
 		hasExplicit = true
 	default:
-		if v := os.Getenv("COLUMNS"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				target = n
-				hasExplicit = true
-			}
+		if n, ok := columnsEnv(t.opts.indent); ok {
+			target = n
+			hasExplicit = true
 		}
 	}
 	if !hasExplicit {
@@ -399,7 +401,7 @@ func (t *Table) resolveMinWidth(tty int, ttyOK bool) int {
 	case t.opts.minWidthSet && t.opts.minWidth > 0:
 		return t.opts.minWidth
 	case t.opts.minWidthPercentSet && t.opts.minWidthPercent > 0:
-		return percentOfScreen(t.opts.minWidthPercent, tty, ttyOK)
+		return t.percentOfScreen(t.opts.minWidthPercent, tty, ttyOK)
 	}
 	return defaultTargetWidth
 }
@@ -411,25 +413,24 @@ func (t *Table) resolveMaxWidth(tty int, ttyOK bool) int {
 	case t.opts.maxWidthSet && t.opts.maxWidth > 0:
 		return t.opts.maxWidth
 	case t.opts.maxWidthPercentSet && t.opts.maxWidthPercent > 0:
-		return percentOfScreen(t.opts.maxWidthPercent, tty, ttyOK)
+		return t.percentOfScreen(t.opts.maxWidthPercent, tty, ttyOK)
 	}
-	return percentOfScreen(defaultFillPercent, tty, ttyOK)
+	return t.percentOfScreen(defaultFillPercent, tty, ttyOK)
 }
 
 // percentOfScreen returns p% of the screen width, using the detected
 // terminal width when available, then COLUMNS, then defaultTargetWidth
-// as the base. The result is floored and guaranteed to be at least 1 —
-// a 0-column target would crash the layout solver.
-func percentOfScreen(p, tty int, ttyOK bool) int {
+// as the base. The terminal and COLUMNS bases already have the table's
+// indent reserved. The result is floored and guaranteed to be at least
+// 1 — a 0-column target would crash the layout solver.
+func (t *Table) percentOfScreen(p, tty int, ttyOK bool) int {
 	base := defaultTargetWidth
 	switch {
 	case ttyOK && tty > 0:
 		base = tty
 	default:
-		if v := os.Getenv("COLUMNS"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				base = n
-			}
+		if n, ok := columnsEnv(t.opts.indent); ok {
+			base = n
 		}
 	}
 	w := base * p / 100
@@ -437,6 +438,59 @@ func percentOfScreen(p, tty int, ttyOK bool) int {
 		return 1
 	}
 	return w
+}
+
+// screenWidth returns the columns the table may occupy on the attached
+// terminal: the probed width minus the indent, never below 1. ok is
+// false when no terminal is attached.
+func (t *Table) screenWidth() (int, bool) {
+	tty, ok := terminalWidthProbe()
+	if !ok {
+		return 0, false
+	}
+	return lessIndent(tty, t.opts.indent), true
+}
+
+// columnsEnv reads the COLUMNS environment variable as a screen width
+// with indent columns reserved. ok is false when the variable is unset
+// or not a positive integer.
+func columnsEnv(indent int) (int, bool) {
+	v := os.Getenv("COLUMNS")
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return lessIndent(n, indent), true
+}
+
+// lessIndent subtracts an indent from a screen width, keeping at least
+// one column for the table.
+func lessIndent(width, indent int) int {
+	if w := width - indent; w > 0 {
+		return w
+	}
+	return 1
+}
+
+// indentLines prefixes every line of a rendered table with n spaces.
+// The rendered output ends in a newline; the empty remainder after it
+// is left alone so no trailing whitespace-only line is produced.
+func indentLines(s string, n int) string {
+	if n <= 0 || s == "" {
+		return s
+	}
+	prefix := strings.Repeat(" ", n)
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		if ln == "" {
+			continue
+		}
+		lines[i] = prefix + ln
+	}
+	return strings.Join(lines, "\n")
 }
 
 // terminalWidthProbe is the injection point for TTY-size detection.
@@ -491,15 +545,17 @@ func (t *Table) LastRenderError() error { return t.lastRenderErr }
 // When the attached stdout or stderr is a terminal, every output line
 // is clipped to that terminal's width (with an ellipsis marking the
 // cut). Writes to pipes, files, or other non-interactive sinks pass
-// through unclipped.
+// through unclipped. A WithIndent margin is reserved before the clip
+// and emitted in front of every line.
 func (t *Table) WriteTo(w io.Writer) (int64, error) {
 	m := Measure(t)
 	l := Layout(t, m)
 	t.renderWarnings = append(t.renderWarnings[:0], l.warnings...)
 	out := renderTable(t, l, t.opts.border)
-	if tty, ok := terminalWidthProbe(); ok {
+	if tty, ok := t.screenWidth(); ok {
 		out = clipToTerminalWidth(out, tty, t.resolveEmojiWidth())
 	}
+	out = indentLines(out, t.opts.indent)
 	n, err := w.Write([]byte(out))
 	if err != nil {
 		return int64(n), err
